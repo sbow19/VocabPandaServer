@@ -1,11 +1,24 @@
 {
     "compilerOptions": {
-      "module": "esnext",
+      "target": "ESNext",
+      "module": "commonjs",
+      "strict": true,
       "esModuleInterop": true,
-      "target": "esnext",
+      "forceConsistentCasingInFileNames": true,
       "moduleResolution": "node",
       "sourceMap": true,
-      "outDir": "dist"
-    },
-    "lib": ["esnext"]
+      "declaration": true,
+      "types": [
+        "node",
+        "express",
+        "body-parser"],
+      "baseUrl": "./",
+      "paths": {
+        "@appTypes/*" : ["src/appTypes/*"],
+        "@app/*": ["src/app/*"],
+  "@shared/*": ["src/shared/*"],
+  "@vpModels/*": ["src/app/models/*"],
+  "@website/*": ["src/website/*"]
+      }
+    }
   }

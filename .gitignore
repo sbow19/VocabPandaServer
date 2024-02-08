@@ -1,3 +1,4 @@
-src/vars/
+.env
+*.ts
 
 node_modules/

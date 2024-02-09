@@ -26,7 +26,7 @@ class UsersDatabase extends models_template_1.default {
                     if (databaseResult.length > 0) {
                         //If the database returns a result, then the email or password exists.
                         matchResponseObject.responseMessage = "Match found";
-                        resolve(matchResponseObject);
+                        reject(matchResponseObject);
                         return;
                     }
                 }
@@ -35,46 +35,6 @@ class UsersDatabase extends models_template_1.default {
             }
             catch (e) {
                 reject(e);
-            }
-        });
-    }
-    //Need to check whether both email or username && password match
-    static #checkLoginDetails(dbSearchObject) {
-        const matchResponseObject = {
-            matchMessage: "",
-            responseCode: 0,
-            responseMessage: "No match found"
-        };
-        const userCredentials = dbSearchObject.userCredentials;
-        return new Promise(async (resolve, reject) => {
-            try {
-                //Get user details ( Note that usernames are uqniue in the database )
-                let userMatchQuery = `SELECT * FROM ${dbSearchObject.table} 
-                WHERE ${userCredentials.identifierType} = ?
-                `;
-                const [databaseResult] = await dbSearchObject.mysqlConnection.query(userMatchQuery, userCredentials.userName);
-                if (databaseResult.length === 0) {
-                    //If there is a negative result, then the email or username does not exist.
-                    matchResponseObject.responseMessage = "No match found";
-                    matchResponseObject.matchMessage = "Username or password does not match";
-                    resolve(matchResponseObject);
-                }
-                else if (databaseResult.length > 0) {
-                    //if there is a positive match, then the user exists, we will then check the hash
-                    console.log(databaseResult);
-                    if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
-                        matchResponseObject.responseMessage = "Match found";
-                        matchResponseObject.matchMessage = "User credentials verified";
-                        matchResponseObject.username = databaseResult[0].username;
-                        resolve(matchResponseObject);
-                    }
-                    else {
-                        reject(matchResponseObject);
-                    } //Compare user provided password with hash in database 
-                }
-            }
-            catch (e) {
-                reject(matchResponseObject);
             }
         });
     }
@@ -114,15 +74,40 @@ class UsersDatabase extends models_template_1.default {
     }
     static loginUser(userCredentials) {
         return new Promise(async (resolve, reject) => {
+            const matchResponseObject = {
+                matchMessage: "",
+                responseCode: 0,
+                responseMessage: "No match found"
+            };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
                 if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
                     //If there is a failure to connect to the database, then we reject the promise
                     reject(connectionResponseObject);
                 }
-                const checkResponse = await this.#checkLoginDetails({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", userCredentials: userCredentials });
-                console.log(checkResponse);
-                resolve(checkResponse);
+                //Get user details ( Note that usernames are uqniue in the database )
+                let userMatchQuery = `SELECT * FROM users 
+                WHERE ${userCredentials.identifierType} = ?
+                `;
+                const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+                if (databaseResult.length === 0) {
+                    //If there is a negative result, then the email or username does not exist.
+                    matchResponseObject.responseMessage = "No match found";
+                    matchResponseObject.matchMessage = "Username or password does not match";
+                    reject(matchResponseObject);
+                }
+                else if (databaseResult.length > 0) {
+                    //if there is a positive match, then the user exists, we will then check the hash    
+                    if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
+                        matchResponseObject.responseMessage = "Match found";
+                        matchResponseObject.matchMessage = "User credentials verified";
+                        matchResponseObject.username = databaseResult[0].username;
+                        resolve(matchResponseObject);
+                    }
+                    else {
+                        reject(matchResponseObject);
+                    } //Compare user provided password with hash in database 
+                }
             }
             catch (e) {
                 reject(e);
@@ -153,10 +138,11 @@ class UsersDatabase extends models_template_1.default {
                 if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
                     //If there is a failure to connect to the database, then we reject the promise
                     dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    resolve(dbAddUserResponseObject);
+                    reject(dbAddUserResponseObject);
                     return;
                 }
                 const checkResponse = await this.#checkForUsers({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", matchTerms: matchSearchArray });
+                //check if passow
                 if (checkResponse.responseMessage === "No match found") {
                     //IF no match found in checking for users
                     //New user id
@@ -175,20 +161,13 @@ class UsersDatabase extends models_template_1.default {
                     resolve(dbAddUserResponseObject);
                     return;
                 }
-                //If ther  are matching details in the database for username or email... then we reject request
-                if (checkResponse.responseMessage === "Match found") {
-                    dbAddUserResponseObject.addMessage = "Username or email already exists";
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    resolve(dbAddUserResponseObject);
-                    return;
-                }
             }
             catch (e) {
                 console.log(e);
                 //If there is some error...
                 dbAddUserResponseObject.responseMessage = "New user could not be added";
-                dbAddUserResponseObject.addMessage = "Unknown error";
-                resolve(dbAddUserResponseObject);
+                dbAddUserResponseObject.addMessage = e;
+                reject(dbAddUserResponseObject);
                 return;
             }
         });
@@ -206,35 +185,51 @@ class UsersDatabase extends models_template_1.default {
                 if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
                     //If there is a failure to connect to the database, then we reject the promise
                     dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                    resolve(dbDeleteUserResponseObject);
+                    reject(dbDeleteUserResponseObject);
                     return;
                 }
-                const checkResponse = await this.#checkLoginDetails({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", userCredentials: userCredentials });
-                if (checkResponse.responseMessage === "Match found") {
-                    //IF match found in checking for users, then account can be deleted.
-                    const deleteUserSqlQuery = `DELETE FROM users 
-                    WHERE username = ?
-                    ;`;
-                    //id, username, email, password_hash
-                    const deleteResult = await connectionResponseObject.mysqlConnection.query(deleteUserSqlQuery, userCredentials.userName);
-                    dbDeleteUserResponseObject.responseMessage = "User successfully deleted";
-                    dbDeleteUserResponseObject.responseCode = 0;
-                    resolve(dbDeleteUserResponseObject);
-                    return;
-                }
-                //If there are matching details in the database for username or email... then we reject request
-                if (checkResponse.responseMessage === "No match found") {
-                    dbDeleteUserResponseObject.deleteMessage = "User could not be delete";
+                connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                //Get user details ( Note that usernames are uqniue in the database )
+                let userMatchQuery = `SELECT * FROM users 
+                WHERE ${userCredentials.identifierType} = ?
+                `;
+                const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+                if (databaseResult.length === 0) {
+                    //If there is a negative result, then the email or username does not exist.
                     dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                    resolve(dbDeleteUserResponseObject);
-                    return;
+                    dbDeleteUserResponseObject.deleteMessage = "Username or password does not match";
+                    reject(dbDeleteUserResponseObject);
                 }
+                else if (databaseResult.length > 0) {
+                    //if there is a positive match, then the user exists, we will then check the hash    
+                    if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
+                        //match successful Leave empty, continue
+                    }
+                    else {
+                        dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
+                        dbDeleteUserResponseObject.deleteMessage = "Username or password does not match";
+                        reject(dbDeleteUserResponseObject);
+                        return;
+                    }
+                }
+                //IF match found in checking for users, then account can be deleted.
+                const deleteUserSqlQuery = `DELETE FROM users 
+                WHERE username = ?
+                ;`;
+                await connectionResponseObject.mysqlConnection?.query(deleteUserSqlQuery, userCredentials.userName, err => {
+                    throw err;
+                    return;
+                });
+                connectionResponseObject.mysqlConnection?.commit();
+                dbDeleteUserResponseObject.responseMessage = "User successfully deleted";
+                dbDeleteUserResponseObject.responseCode = 0;
+                resolve(dbDeleteUserResponseObject);
             }
             catch (e) {
                 console.log(e);
                 //If there is some error...
                 dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                dbDeleteUserResponseObject.deleteMessage = "Unknown error";
+                dbDeleteUserResponseObject.deleteMessage = e;
                 resolve(dbDeleteUserResponseObject);
                 return;
             }
@@ -256,26 +251,37 @@ class UsersDatabase extends models_template_1.default {
                     resolve(dbUpdatePasswordResponseObject);
                     return;
                 }
-                const checkResponse = await this.#checkLoginDetails({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", userCredentials: userCredentials });
-                if (checkResponse.responseMessage === "Match found") {
-                    //IF match found in checking for users, then account can be deleted.
-                    const updatePasswordSqlQuery = `UPDATE users 
-                    SET password_hash = ?
-                    WHERE username = ?
-                    ;`;
-                    //new password_hash, username
-                    const updatePasswordResult = await connectionResponseObject.mysqlConnection.query(updatePasswordSqlQuery, [newPassword, userCredentials.userName]);
-                    dbUpdatePasswordResponseObject.responseMessage = "Password updated successfully";
-                    resolve(dbUpdatePasswordResponseObject);
-                    return;
-                }
-                //If there are matching details in the database for username or email... then we reject request
-                if (checkResponse.responseMessage === "No match found") {
-                    dbUpdatePasswordResponseObject.updateMessage = "User password could not be deleted";
+                //Get user details ( Note that usernames are uqniue in the database )
+                let userMatchQuery = `SELECT * FROM users 
+                WHERE ${userCredentials.identifierType} = ?
+                `;
+                const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+                if (databaseResult.length === 0) {
+                    //If there is a negative result, then the email or username does not exist.
                     dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated";
-                    resolve(dbUpdatePasswordResponseObject);
-                    return;
+                    dbUpdatePasswordResponseObject.updateMessage = "Username or password does not match";
+                    reject(dbUpdatePasswordResponseObject);
                 }
+                else if (databaseResult.length > 0) {
+                    //if there is a positive match, then the user exists, we will then check the hash    
+                    if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
+                        //match successful Leave empty, continue
+                    }
+                    else {
+                        dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated";
+                        dbUpdatePasswordResponseObject.deleteMessage = "Username or password does not match";
+                        reject(dbUpdatePasswordResponseObject);
+                    }
+                }
+                //IF match found in checking for users, then account can be updated.
+                const updatePasswordSqlQuery = `UPDATE users 
+                SET password_hash = ?
+                WHERE username = ?
+                ;`;
+                //new password_hash, username
+                const updatePasswordResult = await connectionResponseObject.mysqlConnection.query(updatePasswordSqlQuery, [newPassword, userCredentials.userName]);
+                dbUpdatePasswordResponseObject.responseMessage = "Password updated successfully";
+                resolve(dbUpdatePasswordResponseObject);
             }
             catch (e) {
                 console.log(e);

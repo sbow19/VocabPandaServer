@@ -82,6 +82,37 @@ class vpModel {
         });
     }
     ;
+    static getUserId(username) {
+        return new Promise(async (resolve, reject) => {
+            //Fetch user_id from users schema
+            const DBMatchResponseObject = {
+                responseCode: 0,
+                responseMessage: "No match found",
+                matchMessage: ""
+            };
+            try {
+                const usersDBResponseObject = await this.getUsersDBConnection();
+                if (usersDBResponseObject.responseMessage === "Connection unsuccessful") {
+                    DBMatchResponseObject.matchMessage = usersDBResponseObject;
+                    reject(DBMatchResponseObject);
+                    return;
+                }
+                const fetchUserId = `
+                    SELECT id FROM users
+                    WHERE username = ?
+                    ;
+                `;
+                const [databaseResult] = await usersDBResponseObject.mysqlConnection?.query(fetchUserId, username);
+                let userId = databaseResult[0].id;
+                DBMatchResponseObject.matchMessage = userId;
+                DBMatchResponseObject.responseMessage = "Match found";
+                resolve(DBMatchResponseObject);
+            }
+            catch (e) {
+                reject(DBMatchResponseObject);
+            }
+        });
+    }
 }
 exports.default = vpModel;
 //# sourceMappingURL=models_template.js.map

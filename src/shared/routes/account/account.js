@@ -26,19 +26,13 @@ AccountRouter.post("/createaccount", async (req, res) => {
     }
     catch (e) {
         res.status(500);
+        return;
     }
     try {
         const dbResponseObject = await users_db_1.default.createNewUser(userCreds); //Add new user to user_logins db
-        if (dbResponseObject.addMessage === "Username or email already exists") {
-            res.status(500).send(dbResponseObject);
-        }
-        else if (dbResponseObject.addMessage === "Unknown error") {
-            res.status(500).send(dbResponseObject);
-        }
-        else {
-            const addUserResponseObject = await user_details_db_1.default.addNewUserDetails(userCreds, dbResponseObject.addMessage);
-            res.status(200).send({ dbResponseObject, addUserResponseObject });
-        }
+        //Assuming that the user was created and the promise resovled, then we can move onto adding the users details.
+        const addUserResponseObject = await user_details_db_1.default.addNewUserDetails(userCreds, dbResponseObject.addMessage); //Create new user returns  user id in .add.message property
+        res.status(200).send({ dbResponseObject, addUserResponseObject });
     }
     catch (e) {
         res.status(500).send(e);
@@ -93,6 +87,26 @@ AccountRouter.put("/upgrade", async (req, res) => {
     }
     catch (dbUpdateResponseObject) {
         res.status(500).send(dbUpdateResponseObject);
+    }
+});
+//Downgrade account
+AccountRouter.put("/downgrade", async (req, res) => {
+    try {
+        if (req.body.downgrade) {
+            const dbDowngradeResponseObject = await user_details_db_1.default.downgradeToFree(req.body.userName);
+            if (dbDowngradeResponseObject.responseMessage === "Downgrade successful") {
+                res.status(200).send(dbDowngradeResponseObject);
+            }
+            else if (dbDowngradeResponseObject.responseMessage === "Downgrade unsuccessful") {
+                res.status(500).send(dbDowngradeResponseObject);
+            }
+        }
+        else {
+            throw "error";
+        }
+    }
+    catch (dbDowngradeResponseObject) {
+        res.status(500).send(dbDowngradeResponseObject);
     }
 });
 module.exports = AccountRouter;

@@ -54,6 +54,31 @@ class vpModel {
             }
         });
     }
+    ;
+    static getUsersContentDBConnection() {
+        return new Promise(async (resolve, reject) => {
+            const dbResponseObject = {
+                responseCode: 0,
+                responseMessage: "Connection successful",
+                mysqlConnection: null
+            };
+            try {
+                const databaseConnection = await mysql.createConnection({
+                    user: process.env.DB_USER,
+                    host: process.env.DB_HOST,
+                    database: "user_content",
+                    password: process.env.DB_PASSWORD
+                });
+                dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.responseMessage = "Connection successful";
+                resolve(dbResponseObject);
+            }
+            catch (e) {
+                dbResponseObject.responseMessage = "Connection unsuccessful";
+                reject(dbResponseObject);
+            }
+        });
+    }
     //Get DB connection re every function
     static getUsersDBConnection() {
         return new Promise(async (resolve, reject) => {

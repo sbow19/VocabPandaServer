@@ -3,10 +3,12 @@ const express = require('express');
 import UsersDatabase from '@shared/models/user_logins/users_db';
 import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
 import * as appTypes from '@appTypes/appTypes'
+const authoriseRequest = require("@shared/misc/authorisation");
 
 const usersRouter = express.Router();
 
 usersRouter.use(express.json());
+usersRouter.use(authoriseRequest);
 
 //Login
 usersRouter.post("/", async(req, res)=>{
@@ -17,6 +19,7 @@ usersRouter.post("/", async(req, res)=>{
         password: req.body.password,
         identifierType: req.body.identifierType
     };
+
 
     try{
         const dbMatchResponse = await UsersDatabase.loginUser(userCredentials);

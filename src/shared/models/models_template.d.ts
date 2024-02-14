@@ -6,6 +6,7 @@ declare class vpModel {
     static getCurrentTime(): any;
     static getMembershipEndTime(): any;
     static getUsersDetailsDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>;
+    static getUsersContentDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>;
     static getUsersDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>;
     static getUserId(username: string): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>;
 }

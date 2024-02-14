@@ -75,6 +75,40 @@ class vpModel {
             }
         })
 
+    };
+
+    static getUsersContentDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+
+        return new Promise(async(resolve, reject)=>{
+
+            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
+                responseCode: 0,
+                responseMessage: "Connection successful",
+                mysqlConnection: null
+            }
+
+            try{
+
+                const databaseConnection: mysqlTypes.Connection = await mysql.createConnection({
+                    user: process.env.DB_USER,
+                    host: process.env.DB_HOST,
+                    database: "user_content",
+                    password: process.env.DB_PASSWORD
+                })
+
+                dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.responseMessage = "Connection successful"
+
+                resolve(dbResponseObject)
+
+            } catch (e) {
+
+                dbResponseObject.responseMessage = "Connection unsuccessful"
+
+                reject (dbResponseObject)
+            }
+        })
+
     }
 
     //Get DB connection re every function

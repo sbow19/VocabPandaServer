@@ -7,8 +7,10 @@ const { v4: uuidv4 } = require('uuid');
 const express = require('express');
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const user_details_db_1 = __importDefault(require("@shared/models/user_details/user_details_db"));
+const authoriseRequest = require("@shared/misc/authorisation");
 const usersRouter = express.Router();
 usersRouter.use(express.json());
+usersRouter.use(authoriseRequest);
 //Login
 usersRouter.post("/", async (req, res) => {
     //Replace with req.body

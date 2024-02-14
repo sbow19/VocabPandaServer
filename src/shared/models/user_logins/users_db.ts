@@ -96,16 +96,21 @@ class UsersDatabase extends vpModel {
                     //If the database returns a result, the API key exists and the device is verified.
 
                     matchResponseObject.responseMessage = "Match found";
+                    matchResponseObject.matchMessage = "Device verified";
 
                     resolve(matchResponseObject)
+                } else if (databaseResult.length === 0){
+
+                    matchResponseObject.matchMessage = "Device could not be verified"
+
+                    throw matchResponseObject // API key not verified, therefore login cannot take place
                 }
 
-                reject(matchResponseObject) // API key not verified, therefore login cannot take place
-
+               
 
             }catch(e){
 
-                reject(matchResponseObject) // API key not verified, therefore login cannot take place
+                reject(e) // API key not verified, therefore login cannot take place
 
             }
 

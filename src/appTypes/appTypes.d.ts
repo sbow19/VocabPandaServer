@@ -127,11 +127,40 @@ updateMessage: string
 
 }
 
+//Add new content
 
+export type DBAddResponseObject<DBAddResponseConfig extends Record<string, any>> = 
 
+ResponseObject<DBUpdateResponseConfig["responseCodeOptions"], DBAddResponseConfig["responseMessageOptions"]> & {
+   addMessage: DBAddResponseConfig["addMessage"]
+   addType: DBAddResponseConfig["addType"];
 
+}
 
-    
+export type DBAddResponseConfig = {
+responseCodeOptions: 0 | 1 | 2
+responseMessageOptions: "Add successful" | "Add unsuccessful"
+addMessage: string
+addType: "project" | "entry" | "tag"
+}
+
+//Delete content
+
+export type DBDeleteResponseObject<DBDeleteResponseConfig extends Record<string, any>> = 
+
+ResponseObject<DBDeleteResponseConfig["responseCodeOptions"], DBDeleteResponseConfig["responseMessageOptions"]> & {
+   deleteMessage: DBDeleteResponseConfig["deleteMessage"]
+   deleteType: DBDeleteResponseConfig["deleteType"];
+
+}
+
+export type DBDeleteResponseConfig = {
+responseCodeOptions: 0 | 1 | 2
+responseMessageOptions: "Delete successful" | "Delete unsuccessful"
+deleteMessage: string
+deleteType: "project" | "entry" | "tag"
+}
+
 
     //Database searches object
 
@@ -169,5 +198,24 @@ updateMessage: string
         tables: "next_plays_refresh" | "next_translations_refresh" | "plays_left" | "premium_users" | "translations_left" | "user_details" | "user_settings"
     }
 
+
+    //User content posts
+
+    export type NewProjectDetails = {
+
+        projectName: string
+        target_lang: string
+        output_lang: string
+
+    }
+
+    export type NewEntryDetails = {
+        target_language_text: string
+        target_language: string
+        output_language_text: string
+        output_language: string
+        tags: [] //list of tagids
+        project: string
+    }
 
 

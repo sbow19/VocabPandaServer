@@ -69,8 +69,6 @@ class UsersContentDatabase extends vpModel {
         })
     }
 
-    //TODO - finish update project
-
     static deleteProject(projectName: string, username: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>{
 
         return new Promise(async(resolve, reject)=>{
@@ -258,25 +256,18 @@ class UsersContentDatabase extends vpModel {
 
     //TODO - finish update entry
 
-    static updateEntry(updateObject: appTypes.NewEntryDetails, username: string, entryId: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>{
+    static updateEntry(updateObject: appTypes.NewEntryDetails, entryId: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpdateResponseConfig>>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const updateEntryResponseObject: appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>={
+            const updateEntryResponseObject: appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>={
 
                 responseCode: 0,
-                responseMessage: "Add unsuccessful",
-                addMessage: "",
-                addType: "entry"
+                responseMessage: "Update unsuccessful",
+                updateMessage: ""
             }
 
             try{
-
-                  //get user id 
-
-                  const {matchMessage} = await super.getUserId(username);
-                
-                  const userId = matchMessage;
 
                   //Check whether  tags  provided
 
@@ -298,9 +289,17 @@ class UsersContentDatabase extends vpModel {
   
                   //Add new user details
   
-                  const addNewEntrySqlQuery =
+                  const updateEntrySqlQuery =
   
-                  `INSERT INTO user_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, DEFAULT, DEFAULT, ?);`
+                  `UPDATE user_entries
+                  SET 
+                    target_language_text = ?,
+                    target_language = ?,
+                    output_language_text = ?,  
+                    output_language = ?,
+                    tags = ?
+                  WHERE entry_id = ?
+                  ;`
                   /*
                       user_id
                       username
@@ -316,28 +315,37 @@ class UsersContentDatabase extends vpModel {
                   */ 
 
                 await dbResponseObject.mysqlConnection?.query(
-                    addNewEntrySqlQuery,
+                    updateEntrySqlQuery,
                     [
-                        userId,
-                        username,
-                        entryId,
-                        newEntryObject.target_language_text,
-                        newEntryObject.target_language,
-                        newEntryObject.output_language_text,
-                        newEntryObject.output_language,
-                        tags, 
-                        newEntryObject.project
+                        updateObject.target_language_text,
+                        updateObject.target_language,
+                        updateObject.output_language_text,
+                        updateObject.output_language,
+                        tags,
+                        entryId
                     ])
 
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                await dbResponseObject.mysqlConnection?.commit(); // end update project transaction
 
                 await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
-                //add tags query
 
-                const insertTagDetailsSqlQuery = `INSERT INTO entry_tags VALUES (?, ?)` //tag_id, entry_id
+                //update tags query
+            /*
+                    Remove tags for the entry and then add them anew
+            */  
+
+                const removeTagDetailsSqlQuery = `DELETE FROM entry_tags WHERE entry_id = ?;` //tag_id, entry_id
+                const insertTagDetailsSqlQuery = "INSERT INTO entry_tags VALUES (?, ?);"
 
                 if(tags>0){
-                    for(let tagId of newEntryObject.tags){
+
+                    // Remove all tags associated with entry_id, and then  re add them.
+                    await dbResponseObject.mysqlConnection?.query(
+                        removeTagDetailsSqlQuery,
+                        entryId
+                    )
+
+                    for(let tagId of updateObject.tags){
 
                         await dbResponseObject.mysqlConnection?.query(
                             insertTagDetailsSqlQuery,
@@ -347,21 +355,21 @@ class UsersContentDatabase extends vpModel {
                             ]
                         )
                     }
-                }                
+                };           
 
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                await dbResponseObject.mysqlConnection?.commit(); // end update entry transaction
 
-                addEntryResponseObject.responseMessage = "Add successful";
-                addEntryResponseObject.responseCode = 0;
-                addEntryResponseObject.addMessage = "New entry added successfully"
-                addEntryResponseObject.addType = "entry"
+                updateEntryResponseObject.responseMessage = "Update successful";
+                updateEntryResponseObject.responseCode = 0;
+                updateEntryResponseObject.updateMessage = "Update successful"
 
-                resolve(addEntryResponseObject)
+
+                resolve(updateEntryResponseObject)
         
 
             }catch(e){
 
-                reject({e, addEntryResponseObject});
+                reject({e, updateEntryResponseObject});
 
             }
         })
@@ -547,6 +555,33 @@ class UsersContentDatabase extends vpModel {
                 reject({e, deleteEntryResponseObject});
 
             }
+        })
+    }
+
+    static requestTranslation(userRequest:appTypes.userRequest, username: string): Promise<appTypes.TranslationResponseObject<appTypes.TranslationResponseConfig>>{
+        return new Promise(async (resolve, reject)=>{
+
+            const translationResponseObject: appTypes.TranslationResponseObject<appTypes.TranslationResponseConfig> = {
+                responseCode: 0,
+                responseMessage: "Translation unsuccessful",
+                translationMessage: ""
+            }
+
+            try{
+
+                //get user id 
+
+                const {matchMessage} = await super.getUserId(username);
+                
+                const userId = matchMessage;
+
+            }catch(e){
+
+            }
+
+
+
+
         })
     }
 }

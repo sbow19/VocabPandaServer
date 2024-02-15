@@ -56,7 +56,7 @@ class UsersDatabase extends vpModel {
         })
     }
 
-    static checkAPIKey(userAPIKey: string): Promise<appTypes.DBResponseObject<appTypes.DBMatchResponseConfig>>{
+    static checkCredentials(userCredentials: {name: string, pass: string}): Promise<appTypes.DBResponseObject<appTypes.DBMatchResponseConfig>>{
 
         //Checks API key to esnure that connecting device has api key generated on app download.
 
@@ -68,11 +68,6 @@ class UsersDatabase extends vpModel {
                 responseMessage: "No match found"
             }
 
-            const APIKeySarchObject: appTypes.MatchTerms<appTypes.APIKeysTableColumns> = {
-
-                term: userAPIKey,
-                column: "api_key"
-            }
 
             try{
 
@@ -80,16 +75,20 @@ class UsersDatabase extends vpModel {
 
                 if(dbResponseObject.responseMessage === "Connection unsuccessful"){
                     // If connection failed, then we reject the query, else we carry on
-                    reject(dbResponseObject)
+                    throw dbResponseObject;
                 }
 
                 let matchQuery = 
 
                 `SELECT * FROM api_keys 
-                WHERE ${APIKeySarchObject.column} = ?; 
+                WHERE api_key = ?
+                AND device_id = ?
+                ; 
                 `
-                
-                const [databaseResult] = await dbResponseObject.mysqlConnection.query(matchQuery, APIKeySarchObject.term) //Returns a result set, where the first array are the results, and the second are the headers.
+                const [databaseResult] = await dbResponseObject.mysqlConnection.query(matchQuery, [
+                    userCredentials.pass,
+                    userCredentials.name
+                ]) //Returns a result set, where the first array are the results, and the second are the headers.
 
                 if (databaseResult.length > 0){
 
@@ -99,6 +98,7 @@ class UsersDatabase extends vpModel {
                     matchResponseObject.matchMessage = "Device verified";
 
                     resolve(matchResponseObject)
+                    return
                 } else if (databaseResult.length === 0){
 
                     matchResponseObject.matchMessage = "Device could not be verified"
@@ -117,6 +117,7 @@ class UsersDatabase extends vpModel {
         })
 
     }
+
 
     static loginUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>> {
 
@@ -230,11 +231,13 @@ class UsersDatabase extends vpModel {
 
                     const newUserId = super.generateUUID();
 
+                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+
                     //Password hash
 
                     const addUserSqlQuery =  `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT);` //id, username, email, password_hash
 
-                    const addResult = await connectionResponseObject.mysqlConnection.query(
+                    const addResult = await connectionResponseObject.mysqlConnection?.query(
                         addUserSqlQuery,
                         [
                             newUserId,
@@ -242,6 +245,25 @@ class UsersDatabase extends vpModel {
                             userCredentials.email,
                             userCredentials.password
                         ])
+                    
+                    //Connect new user id to device id
+
+                    const addUserDevice = 
+                    `UPDATE api_keys 
+                    SET user_id = ? 
+                    WHERE
+                        api_key = ?
+                    AND
+                        device_id = ? 
+                    `
+
+                    await connectionResponseObject.mysqlConnection?.query(addUserDevice,[
+                        newUserId,
+                        userCredentials.apiKey,
+                        userCredentials.deviceId
+                    ])
+
+                    connectionResponseObject.mysqlConnection?.commit();
             
 
                     dbAddUserResponseObject.responseMessage = "New user added";

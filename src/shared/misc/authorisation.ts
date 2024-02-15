@@ -1,15 +1,19 @@
 import UsersDatabase from "@shared/models/user_logins/users_db";
+const basicAuth = require("basic-auth");
 
 const authoriseRequest = async(req, res, next)=>{
 
     try{
 
-        if(!req.headers.authorization){
-            throw "No authorisation header provided"
-        }
-        const userAPIKey = req.headers.authorization;
+        const credentials = basicAuth(req);
+        console.log(credentials)
 
-        const dbResult = await UsersDatabase.checkAPIKey(userAPIKey);
+        if (!credentials || !credentials.name || !credentials.pass) {
+            res.status(401).send('Authentication required');
+            return;
+        }
+
+        const dbResult = await UsersDatabase.checkCredentials(credentials);
         
         if(dbResult.responseMessage === "No match found"){
             throw dbResult;

@@ -65,7 +65,6 @@ usersContentRouter.put("/updateentry", async(req, res)=>{
 
         const updateEntryResponse = await UsersContentDatabase.updateEntry(
             req.body.updateDetails,
-            req.body.userName,
             req.body.entryId
         );
 
@@ -126,7 +125,5 @@ usersContentRouter.delete("/deletetag", async(req, res)=>{
     }
 
 })
-
-
 
 module.exports = usersContentRouter;

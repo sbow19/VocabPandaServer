@@ -5,7 +5,16 @@ import * as mysql from "mysql2"
         userName?: string
         password: string
         email?: string,
+        deviceId?: string,
+        apiKey?: string,
+
         identifierType?: "email" | "username"
+    }
+
+    export type userRequest = {
+        target_text: string
+        target_text_lang: string
+        output_lang: string
     }
 
     //Response template for database searches
@@ -142,6 +151,21 @@ responseCodeOptions: 0 | 1 | 2
 responseMessageOptions: "Add successful" | "Add unsuccessful"
 addMessage: string
 addType: "project" | "entry" | "tag"
+}
+
+//Request translation
+
+export type TranslationResponseObject<TranslationResponseConfig extends Record<string, any>> = 
+
+ResponseObject<TranslationResponseConfig["responseCodeOptions"], TranslationResponseConfig["responseMessageOptions"]> & {
+   translationMessage: TranslationResponseConfig["translationMessage"]
+
+}
+
+export type TranslationResponseConfig = {
+responseCodeOptions: 0 | 1 | 2
+responseMessageOptions: "Translation successful" | "Translation unsuccessful"
+translationMessage: string
 }
 
 //Delete content

@@ -4,6 +4,7 @@ import UsersDatabase from '@shared/models/user_logins/users_db';
 import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
 import * as appTypes from '@appTypes/appTypes'
 const authoriseRequest = require("@shared/misc/authorisation");
+const basicAuth = require("basic-auth");
 
 const usersRouter = express.Router();
 
@@ -13,10 +14,14 @@ usersRouter.use(authoriseRequest);
 //Login
 usersRouter.post("/", async(req, res)=>{
 
+    const credentials = basicAuth(req);
+
     //Replace with req.body
     const userCredentials: appTypes.UserCredentials = {
         userName: req.body.userName,
         password: req.body.password,
+        deviceId: credentials.name,
+        apiKey: credentials.pass,
         identifierType: req.body.identifierType
     };
 

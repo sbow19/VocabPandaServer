@@ -38,7 +38,7 @@ class UsersDatabase extends models_template_1.default {
             }
         });
     }
-    static checkAPIKey(userAPIKey) {
+    static checkCredentials(userCredentials) {
         //Checks API key to esnure that connecting device has api key generated on app download.
         return new Promise(async (resolve, reject) => {
             const matchResponseObject = {
@@ -46,25 +46,27 @@ class UsersDatabase extends models_template_1.default {
                 responseCode: 0,
                 responseMessage: "No match found"
             };
-            const APIKeySarchObject = {
-                term: userAPIKey,
-                column: "api_key"
-            };
             try {
                 const dbResponseObject = await super.getUsersDBConnection();
                 if (dbResponseObject.responseMessage === "Connection unsuccessful") {
                     // If connection failed, then we reject the query, else we carry on
-                    reject(dbResponseObject);
+                    throw dbResponseObject;
                 }
                 let matchQuery = `SELECT * FROM api_keys 
-                WHERE ${APIKeySarchObject.column} = ?; 
+                WHERE api_key = ?
+                AND device_id = ?
+                ; 
                 `;
-                const [databaseResult] = await dbResponseObject.mysqlConnection.query(matchQuery, APIKeySarchObject.term); //Returns a result set, where the first array are the results, and the second are the headers.
+                const [databaseResult] = await dbResponseObject.mysqlConnection.query(matchQuery, [
+                    userCredentials.pass,
+                    userCredentials.name
+                ]); //Returns a result set, where the first array are the results, and the second are the headers.
                 if (databaseResult.length > 0) {
                     //If the database returns a result, the API key exists and the device is verified.
                     matchResponseObject.responseMessage = "Match found";
                     matchResponseObject.matchMessage = "Device verified";
                     resolve(matchResponseObject);
+                    return;
                 }
                 else if (databaseResult.length === 0) {
                     matchResponseObject.matchMessage = "Device could not be verified";
@@ -151,14 +153,29 @@ class UsersDatabase extends models_template_1.default {
                     //IF no match found in checking for users
                     //New user id
                     const newUserId = super.generateUUID();
+                    connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
                     //Password hash
                     const addUserSqlQuery = `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT);`; //id, username, email, password_hash
-                    const addResult = await connectionResponseObject.mysqlConnection.query(addUserSqlQuery, [
+                    const addResult = await connectionResponseObject.mysqlConnection?.query(addUserSqlQuery, [
                         newUserId,
                         userCredentials.userName,
                         userCredentials.email,
                         userCredentials.password
                     ]);
+                    //Connect new user id to device id
+                    const addUserDevice = `UPDATE api_keys 
+                    SET user_id = ? 
+                    WHERE
+                        api_key = ?
+                    AND
+                        device_id = ? 
+                    `;
+                    await connectionResponseObject.mysqlConnection?.query(addUserDevice, [
+                        newUserId,
+                        userCredentials.apiKey,
+                        userCredentials.deviceId
+                    ]);
+                    connectionResponseObject.mysqlConnection?.commit();
                     dbAddUserResponseObject.responseMessage = "New user added";
                     dbAddUserResponseObject.responseCode = 0;
                     dbAddUserResponseObject.addMessage = newUserId; //Send the user id back to add new details

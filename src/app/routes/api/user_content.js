@@ -38,6 +38,15 @@ usersContentRouter.post("/addentry", async (req, res) => {
         res.send(e);
     }
 });
+usersContentRouter.put("/updateentry", async (req, res) => {
+    try {
+        const updateEntryResponse = await user_content_db_1.default.updateEntry(req.body.updateDetails, req.body.entryId);
+        res.status(200).send(updateEntryResponse);
+    }
+    catch (e) {
+        res.send(e);
+    }
+});
 usersContentRouter.delete("/deleteentry", async (req, res) => {
     try {
         const deleteEntryResponse = await user_content_db_1.default.deleteEntry(req.body.entryId);

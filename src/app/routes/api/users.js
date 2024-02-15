@@ -8,15 +8,19 @@ const express = require('express');
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const user_details_db_1 = __importDefault(require("@shared/models/user_details/user_details_db"));
 const authoriseRequest = require("@shared/misc/authorisation");
+const basicAuth = require("basic-auth");
 const usersRouter = express.Router();
 usersRouter.use(express.json());
 usersRouter.use(authoriseRequest);
 //Login
 usersRouter.post("/", async (req, res) => {
+    const credentials = basicAuth(req);
     //Replace with req.body
     const userCredentials = {
         userName: req.body.userName,
         password: req.body.password,
+        deviceId: credentials.name,
+        apiKey: credentials.pass,
         identifierType: req.body.identifierType
     };
     try {

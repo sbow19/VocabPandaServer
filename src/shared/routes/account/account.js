@@ -7,6 +7,7 @@ const express = require('express');
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const user_details_db_1 = __importDefault(require("@shared/models/user_details/user_details_db"));
 const bycrypt = require("bcrypt");
+const basicAuth = require("basic-auth");
 //Account middleware
 const AccountRouter = express.Router();
 AccountRouter.use(express.json());
@@ -17,11 +18,15 @@ AccountRouter.post("/createaccount", async (req, res) => {
     try {
         const salt = await bycrypt.genSalt();
         hashedPassword = await bycrypt.hash(req.body.password, salt);
+        //get deviceid and API key
+        const credentials = basicAuth(req);
         //User creds parsed from http post request... This will be a post message
         userCreds = {
             userName: req.body.userName,
             password: hashedPassword,
             email: req.body.email,
+            deviceId: credentials.name,
+            apiKey: credentials.pass
         };
     }
     catch (e) {
@@ -41,6 +46,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
 //Delete account (this code could be handled on the client side, but woudl rather handle it here);
 //TODO trigger payment cancellation logic here
 AccountRouter.delete("/deleteaccount", async (req, res) => {
+    //verify credentials
     try {
         const dbResponseObject = await users_db_1.default.deleteUser({
             userName: req.body.userName,

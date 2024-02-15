@@ -3,6 +3,7 @@ import UsersDatabase from "@shared/models/user_logins/users_db"
 import UserDetailsDatabase from "@shared/models/user_details/user_details_db";
 import * as appTypes from "@appTypes/appTypes";
 const bycrypt = require("bcrypt");
+const basicAuth = require("basic-auth");
 
 //Account middleware
 
@@ -20,11 +21,16 @@ AccountRouter.post("/createaccount", async(req, res)=>{
         const salt = await bycrypt.genSalt();
         hashedPassword = await bycrypt.hash(req.body.password, salt);
 
+        //get deviceid and API key
+        const credentials = basicAuth(req);
+
         //User creds parsed from http post request... This will be a post message
         userCreds = {
         userName: req.body.userName,
         password: hashedPassword,
         email: req.body.email,
+        deviceId: credentials.name,
+        apiKey: credentials.pass
     }
 
     } catch (e){
@@ -56,6 +62,8 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 //TODO trigger payment cancellation logic here
 
 AccountRouter.delete("/deleteaccount", async(req, res)=>{
+
+    //verify credentials
 
     try{
         const dbResponseObject =  await UsersDatabase.deleteUser({

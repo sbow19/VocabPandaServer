@@ -1,6 +1,7 @@
 require("dotenv").config();
+const uuid = require("uuid")
 import "module-alias/register";
-const authoriseRequest = require("@shared/misc/authorisation")
+import UsersDatabase from "@shared/models/user_logins/users_db";
 
 const express = require('express');
 
@@ -9,8 +10,52 @@ const express = require('express');
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
 
-//Verify device 
-vocabpandaserver.use(authoriseRequest); 
+vocabpandaserver.use(express.json());
+
+//Generate api_key
+
+vocabpandaserver.post("/generateapikey", async(req, res)=>{
+
+    try{
+
+        //Get database connection
+
+        const dbConnection = await UsersDatabase.getUsersDBConnection();
+
+        const deviceId = req.body.deviceId;
+
+        const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`
+
+        const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
+
+        if(queryResult.length === 0){
+            res.send("Device id does not exist... generating new api key");
+            
+            //new API key
+            const newAPIKey = uuid.v4();
+
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?);`  //api_key, device_id
+
+            await dbConnection.mysqlConnection?.query(
+                addNewDeviceSqlQuery,
+                [
+                    newAPIKey,
+                    deviceId
+                ]
+            )
+
+        } else if (queryResult > 0){
+            res.send("Device id already exists");
+        };
+
+    }catch(e){
+
+        res.status(500).send(e);
+
+    }
+
+});
+
 
 //Redirect to main website routing
 vocabpandaserver.use('/', require("./src/website/routes/main.js"));
@@ -21,7 +66,8 @@ vocabpandaserver.use('/account', require("./src/shared/routes/account/account.js
 //Redirect to app specific API handlers
 vocabpandaserver.use('/app', require("./src/app/routes/main.js"));
 
-//REdirect to Deepl translation API code
+//Redirect to Deepl API
+vocabpandaserver.use('/translate', require("./src/shared/deeplAPI/deeplAPI.js"));
 
 //Initiate server 
 vocabpandaserver.listen(PORT, ()=>{

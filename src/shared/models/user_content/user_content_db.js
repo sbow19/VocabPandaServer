@@ -43,6 +43,7 @@ class UsersContentDatabase extends models_template_1.default {
             }
         });
     }
+    //TODO - finish update project
     static deleteProject(projectName, username) {
         return new Promise(async (resolve, reject) => {
             const dbDeleteResponseObject = {
@@ -159,6 +160,86 @@ class UsersContentDatabase extends models_template_1.default {
             }
             catch (e) {
                 reject({ e, addEntryResponseObject });
+            }
+        });
+    }
+    //TODO - finish update entry
+    static updateEntry(updateObject, entryId) {
+        return new Promise(async (resolve, reject) => {
+            const updateEntryResponseObject = {
+                responseCode: 0,
+                responseMessage: "Update unsuccessful",
+                updateMessage: ""
+            };
+            try {
+                //Check whether  tags  provided
+                let tags = 0;
+                if (updateObject.tags.length > 0) {
+                    tags = 1; //Tags provided
+                }
+                ;
+                //Get db connection
+                const dbResponseObject = await super.getUsersContentDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                //Add new user details
+                const updateEntrySqlQuery = `UPDATE user_entries
+                  SET 
+                    target_language_text = ?,
+                    target_language = ?,
+                    output_language_text = ?,  
+                    output_language = ?,
+                    tags = ?
+                  WHERE entry_id = ?
+                  ;`;
+                /*
+                    user_id
+                    username
+                    entry_id
+                    target_language_text
+                    target_language
+                    output_language_text
+                    output_language
+                    tags
+                    created_at
+                    updated_at
+                    project
+                */
+                await dbResponseObject.mysqlConnection?.query(updateEntrySqlQuery, [
+                    updateObject.target_language_text,
+                    updateObject.target_language,
+                    updateObject.output_language_text,
+                    updateObject.output_language,
+                    tags,
+                    entryId
+                ]);
+                await dbResponseObject.mysqlConnection?.commit(); // end update project transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                //update tags query
+                /*
+                        Remove tags for the entry and then add them anew
+                */
+                const removeTagDetailsSqlQuery = `DELETE FROM entry_tags WHERE entry_id = ?;`; //tag_id, entry_id
+                const insertTagDetailsSqlQuery = "INSERT INTO entry_tags VALUES (?, ?);";
+                if (tags > 0) {
+                    // Remove all tags associated with entry_id, and then  re add them.
+                    await dbResponseObject.mysqlConnection?.query(removeTagDetailsSqlQuery, entryId);
+                    for (let tagId of updateObject.tags) {
+                        await dbResponseObject.mysqlConnection?.query(insertTagDetailsSqlQuery, [
+                            tagId,
+                            entryId
+                        ]);
+                    }
+                }
+                ;
+                await dbResponseObject.mysqlConnection?.commit(); // end update entry transaction
+                updateEntryResponseObject.responseMessage = "Update successful";
+                updateEntryResponseObject.responseCode = 0;
+                updateEntryResponseObject.updateMessage = "Update successful";
+                resolve(updateEntryResponseObject);
+            }
+            catch (e) {
+                reject({ e, updateEntryResponseObject });
             }
         });
     }

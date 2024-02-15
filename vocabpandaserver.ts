@@ -2,6 +2,8 @@ require("dotenv").config();
 const uuid = require("uuid")
 import "module-alias/register";
 import UsersDatabase from "@shared/models/user_logins/users_db";
+import RefreshCounter from "@shared/updates/refresh/refresh";
+import * as appTypes from "@appTypes/appTypes"
 
 const express = require('express');
 
@@ -9,6 +11,15 @@ const express = require('express');
 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
+
+//SET CHECKING INTERVALS
+
+setInterval(RefreshCounter.gameRefreshChecker, 60000);
+
+setInterval(RefreshCounter.translationsRefreshChecker, 60000);
+
+setInterval(RefreshCounter.premiumUserChecker, 60000);
+
 
 vocabpandaserver.use(express.json());
 
@@ -22,6 +33,8 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
         const dbConnection = await UsersDatabase.getUsersDBConnection();
 
+        dbConnection.mysqlConnection?.beginTransaction(err => {throw err})
+
         const deviceId = req.body.deviceId;
 
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`
@@ -29,20 +42,25 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
         const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
 
         if(queryResult.length === 0){
-            res.send("Device id does not exist... generating new api key");
+            
             
             //new API key
             const newAPIKey = uuid.v4();
 
-            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?);`  //api_key, device_id
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?);`  //api_key, device_id, user_id
 
             await dbConnection.mysqlConnection?.query(
                 addNewDeviceSqlQuery,
                 [
                     newAPIKey,
-                    deviceId
+                    deviceId,
+                    null
                 ]
             )
+
+            dbConnection.mysqlConnection?.commit()
+
+            res.send("Device id does not exist... generated new api key");
 
         } else if (queryResult > 0){
             res.send("Device id already exists");

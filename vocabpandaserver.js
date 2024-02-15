@@ -7,28 +7,36 @@ require("dotenv").config();
 const uuid = require("uuid");
 require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
+const refresh_1 = __importDefault(require("@shared/updates/refresh/refresh"));
 const express = require('express');
 //PATH TO SSL CERTICATE AND KEY HERE 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
+//SET CHECKING INTERVALS
+setInterval(refresh_1.default.gameRefreshChecker, 60000);
+setInterval(refresh_1.default.translationsRefreshChecker, 60000);
+setInterval(refresh_1.default.premiumUserChecker, 60000);
 vocabpandaserver.use(express.json());
 //Generate api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {
     try {
         //Get database connection
         const dbConnection = await users_db_1.default.getUsersDBConnection();
+        dbConnection.mysqlConnection?.beginTransaction(err => { throw err; });
         const deviceId = req.body.deviceId;
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`;
         const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
         if (queryResult.length === 0) {
-            res.send("Device id does not exist... generating new api key");
             //new API key
             const newAPIKey = uuid.v4();
-            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?);`; //api_key, device_id
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?);`; //api_key, device_id, user_id
             await dbConnection.mysqlConnection?.query(addNewDeviceSqlQuery, [
                 newAPIKey,
-                deviceId
+                deviceId,
+                null
             ]);
+            dbConnection.mysqlConnection?.commit();
+            res.send("Device id does not exist... generated new api key");
         }
         else if (queryResult > 0) {
             res.send("Device id already exists");
@@ -46,6 +54,7 @@ vocabpandaserver.use('/account', require("./src/shared/routes/account/account.js
 //Redirect to app specific API handlers
 vocabpandaserver.use('/app', require("./src/app/routes/main.js"));
 //Redirect to Deepl API
+vocabpandaserver.use('/translate', require("./src/shared/deeplAPI/deeplAPI.js"));
 //Initiate server 
 vocabpandaserver.listen(PORT, () => {
     console.log("listening to port 3000...");

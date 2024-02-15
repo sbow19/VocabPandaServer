@@ -242,4 +242,11 @@ deleteType: "project" | "entry" | "tag"
         project: string
     }
 
+    export type refreshErrorResponse ={
+
+        responseMessage: "Refresh complete" | "Refresh unsuccessful"
+        info: string
+
+    }
+
 

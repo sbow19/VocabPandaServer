@@ -8,5 +8,6 @@ declare class UsersContentDatabase extends vpModel {
     static deleteEntry(entryId: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>;
     static addTag(tagName: string, username: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>;
     static deleteTag(tagId: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>;
+    static requestTranslation(userRequest: appTypes.userRequest, username: string): Promise<appTypes.TranslationResponseObject<appTypes.TranslationResponseConfig>>;
 }
 export default UsersContentDatabase;

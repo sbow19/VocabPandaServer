@@ -319,6 +319,265 @@ class UserDetailsDatabase extends vpModel {
         })
     }
 
+    //Check translations left
+
+    static checkTranslationsLeft(username: string): Promise<boolean>{
+        return new Promise(async (resolve, reject)=>{
+
+
+            try{
+
+
+                //get user id 
+
+                const {matchMessage} = await super.getUserId(username);
+                
+                const userId = matchMessage;
+
+                //Get db connection
+
+                const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                
+                if(dbConnectionObject.responseMessage === "Connection unsuccessful"){
+                    throw "Cannot connect"
+                }
+
+                //SQL query
+
+                const checkTranslationsSqlQuery = `
+                    SELECT * FROM translation_left 
+                    WHERE user_id = ?;
+                `
+
+                await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+
+                const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
+                    checkTranslationsSqlQuery,
+                    userId
+                )
+
+                if(queryResult.length === 0){
+
+                    throw "error, no user data"
+                
+                } else if (queryResult.length > 0){
+
+                    const translationsLeft = queryResult[0].translations_left;
+
+                    if(translationsLeft > 0){
+                        resolve(true)
+                    } else if (translationsLeft === 0){
+                        throw `No translations left`
+                    }
+
+                }
+
+            }catch(e){
+
+                reject(e)
+            }
+
+
+        })
+    }
+
+    //Subtract translations left
+
+    static updateTranslationsLeft(username: string): Promise<number>{
+        return new Promise(async (resolve, reject)=>{
+
+            try{
+
+                //get user id 
+
+                const {matchMessage} = await super.getUserId(username);
+                
+                const userId = matchMessage;
+
+                //Get db connection
+
+                const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                
+                if(dbConnectionObject.responseMessage === "Connection unsuccessful"){
+                    throw "Cannot connect"
+                }
+
+                //SQL query to get translatoins left
+
+                const checkTranslationsSqlQuery = `
+                    SELECT * FROM translation_left 
+                    WHERE user_id = ?;
+                `
+
+                //query to check if premium
+
+                const checkPremiumStatus = `SELECT *  FROM user_details WHERE user_id = ?;`
+
+                await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+
+                const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
+                    checkTranslationsSqlQuery,
+                    userId
+                )
+
+                const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(
+                    checkPremiumStatus,
+                    userId
+                )
+
+                if(premiumQueryResult[0].premium){
+                    //If user is premium user...
+
+                    if(queryResult[0].translations_left === 120 ){
+
+                        const newTranslationsLeft = queryResult[0].translations_left - 1;
+    
+                        const updateTranslationsQuery = `
+                            UPDATE translation_left
+                            SET translations_left = ? 
+                            WHERE user_id = ?
+                            ;
+                        `
+    
+                        await dbConnectionObject.mysqlConnection?.query(
+                            updateTranslationsQuery,
+                            [
+                                newTranslationsLeft,
+                                userId
+                            ]
+                        );
+
+                        //Set timer on translations left
+                        const setTimerSqlQuery = `
+                            UPDATE next_translations_refresh 
+                            SET translations_refresh = ?
+                            WHERE user_id = ?
+                            ;
+                        `
+                        const refreshEndTime = super.getTranslationRefreshEndTime();
+
+                        
+                        await dbConnectionObject.mysqlConnection?.query(
+                            setTimerSqlQuery,
+                            [
+                                refreshEndTime,
+                                userId
+                            ]
+                        );
+
+
+                        await dbConnectionObject.mysqlConnection?.commit();
+    
+                        resolve(newTranslationsLeft)
+                    
+                    } else if (queryResult[0].translations_left > 0){
+
+                        const newTranslationsLeft = queryResult[0].translations_left - 1;
+    
+                        const updateTranslationsQuery = `
+                            UPDATE translation_left
+                            SET translations_left = ? 
+                            WHERE user_id = ?
+                            ;
+                        `
+    
+                        await dbConnectionObject.mysqlConnection?.query(
+                            updateTranslationsQuery,
+                            [
+                                newTranslationsLeft,
+                                userId
+                            ]
+                        );
+                        await dbConnectionObject.mysqlConnection?.commit();
+    
+                        resolve(newTranslationsLeft)
+
+                    } else if (queryResult[0].translations_left === 0){
+
+                        await dbConnectionObject.mysqlConnection?.commit();
+                        throw "No more translations allowed"
+                    }
+    
+                    
+
+                }else if (!premiumQueryResult[0].premium){
+
+                    //If user is not premium...
+
+                    if(queryResult[0].translations_left === 40){
+
+                        const newTranslationsLeft = queryResult[0].translations_left - 1;
+    
+                        const updateTranslationsQuery = `
+                            UPDATE translation_left
+                            SET translations_left = ? 
+                            WHERE user_id = ?
+                            ;
+                        `
+    
+                        await dbConnectionObject.mysqlConnection?.query(
+                            updateTranslationsQuery,
+                            [
+                                newTranslationsLeft,
+                                userId
+                            ]
+                        );
+
+                        //Set timer on translations left
+                        const setTimerSqlQuery = `
+                            UPDATE next_translations_refresh 
+                            SET translations_refresh = ?
+                            WHERE user_id = ?
+                            ;
+                        `
+                        const refreshEndTime = super.getTranslationRefreshEndTime();
+
+                        
+                        await dbConnectionObject.mysqlConnection?.query(
+                            setTimerSqlQuery,
+                            [
+                                refreshEndTime,
+                                userId
+                            ]
+                        );
+
+                        await dbConnectionObject.mysqlConnection?.commit();
+    
+                        resolve(newTranslationsLeft)
+                    
+                    } else if (queryResult[0].translations_left > 0){
+
+                        const newTranslationsLeft = queryResult[0].translations_left - 1;
+    
+                        const updateTranslationsQuery = `
+                            UPDATE translation_left
+                            SET translations_left = ? 
+                            WHERE user_id = ?
+                            ;
+                        `
+    
+                        await dbConnectionObject.mysqlConnection?.query(
+                            updateTranslationsQuery,
+                            [
+                                newTranslationsLeft,
+                                userId
+                            ]
+                        );
+                        await dbConnectionObject.mysqlConnection?.commit();
+    
+                        resolve(newTranslationsLeft)
+
+                    } else if (queryResult[0].translations_left === 0){
+
+                        await dbConnectionObject.mysqlConnection?.commit();
+                        throw "No more translations allowed"
+                    }
+                }
+            }catch(e){
+                reject(e)
+            }
+        })
+    }
 }
 
 export default UserDetailsDatabase;

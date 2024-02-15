@@ -43,7 +43,6 @@ class UsersContentDatabase extends models_template_1.default {
             }
         });
     }
-    //TODO - finish update project
     static deleteProject(projectName, username) {
         return new Promise(async (resolve, reject) => {
             const dbDeleteResponseObject = {
@@ -352,6 +351,22 @@ class UsersContentDatabase extends models_template_1.default {
             }
             catch (e) {
                 reject({ e, deleteEntryResponseObject });
+            }
+        });
+    }
+    static requestTranslation(userRequest, username) {
+        return new Promise(async (resolve, reject) => {
+            const translationResponseObject = {
+                responseCode: 0,
+                responseMessage: "Translation unsuccessful",
+                translationMessage: ""
+            };
+            try {
+                //get user id 
+                const { matchMessage } = await super.getUserId(username);
+                const userId = matchMessage;
+            }
+            catch (e) {
             }
         });
     }

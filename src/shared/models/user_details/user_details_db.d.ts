@@ -5,5 +5,7 @@ declare class UserDetailsDatabase extends vpModel {
     static upgradeToPremium(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>;
     static downgradeToFree(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>;
     static updateLastLoggedIn(username: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>;
+    static checkTranslationsLeft(username: string): Promise<boolean>;
+    static updateTranslationsLeft(username: string): Promise<number>;
 }
 export default UserDetailsDatabase;

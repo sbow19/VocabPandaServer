@@ -30,6 +30,15 @@ class vpModel {
         const sqlFormattedDate = strftime('%Y-%m-%d %H:%M:%S', membershipDelta.toDate());
         return sqlFormattedDate;
     }
+    static getTranslationRefreshEndTime() {
+        // Get current datetime
+        const currentDate = dayjs();
+        const membershipDelta = currentDate.add(1, "day");
+        console.log(membershipDelta.toDate(), currentDate.format());
+        // Format the current datetime to SQL format
+        const sqlFormattedDate = strftime('%Y-%m-%d %H:%M:%S', membershipDelta.toDate());
+        return sqlFormattedDate;
+    }
     static getUsersDetailsDBConnection() {
         return new Promise(async (resolve, reject) => {
             const dbResponseObject = {

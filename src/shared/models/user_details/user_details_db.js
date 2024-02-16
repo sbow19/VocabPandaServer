@@ -268,7 +268,6 @@ class UserDetailsDatabase extends models_template_1.default {
                 await dbConnectionObject.mysqlConnection?.beginTransaction(err => { throw err; });
                 const [queryResult] = await dbConnectionObject.mysqlConnection?.query(checkTranslationsSqlQuery, userId);
                 const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(checkPremiumStatus, userId);
-                console.log(premiumQueryResult);
                 if (premiumQueryResult[0].premium) {
                     //If user is premium user...
                     if (queryResult[0].translations_left === 120) {

@@ -1,6 +1,7 @@
 const express = require('express');
 import UsersDatabase from "@shared/models/user_logins/users_db"
 import UserDetailsDatabase from "@shared/models/user_details/user_details_db";
+import VocabPandaEmail from "@shared/misc/verification/email";
 import * as appTypes from "@appTypes/appTypes";
 const bycrypt = require("bcrypt");
 const basicAuth = require("basic-auth");
@@ -10,6 +11,7 @@ const basicAuth = require("basic-auth");
 const AccountRouter = express.Router();
 
 AccountRouter.use(express.json())
+
 
 //Create account
 AccountRouter.post("/createaccount", async(req, res)=>{
@@ -24,6 +26,10 @@ AccountRouter.post("/createaccount", async(req, res)=>{
         //get deviceid and API key
         const credentials = basicAuth(req);
 
+        if(!credentials || !credentials.name || !credentials.pass){
+            throw "No credentials provided"
+        }
+
         //User creds parsed from http post request... This will be a post message
         userCreds = {
         userName: req.body.userName,
@@ -35,7 +41,7 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 
     } catch (e){
 
-        res.status(500)
+        res.status(401).send(e)
         return
 
     } 
@@ -48,6 +54,10 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 
         const addUserResponseObject = await UserDetailsDatabase.addNewUserDetails(userCreds, dbResponseObject.addMessage); //Create new user returns  user id in .add.message property
 
+        //Send email verification link to email provided by user
+
+        let result = await VocabPandaEmail.sendVerificationEmail(req.body.email);
+
         res.status(200).send({dbResponseObject, addUserResponseObject});
     
     } catch(e){
@@ -55,9 +65,34 @@ AccountRouter.post("/createaccount", async(req, res)=>{
         res.status(500).send(e);
     }
     
+});
+
+//Test email
+AccountRouter.get("/createaccount/verify", async(req, res)=>{
+
+    console.log("Hello world")
+
+    try{
+
+        console.log(req.query.token)
+
+        if(!req.query.token){
+            res.status(401).send("Invalid verification token provided or token expired");
+        } else if (req.query.token){
+
+            const result = await VocabPandaEmail.checkToken(req.query.token);
+
+            res.status(200).send("Account verified")
+        }
+
+    }catch(e){
+
+        res.status(401).send(e)
+
+    }
+    
 })
 
-//Delete account (this code could be handled on the client side, but woudl rather handle it here);
 
 //TODO trigger payment cancellation logic here
 

@@ -7,15 +7,13 @@ require("dotenv").config();
 const uuid = require("uuid");
 require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
-const refresh_1 = __importDefault(require("@shared/updates/refresh/refresh"));
+const cron_1 = __importDefault(require("@shared/updates/cron"));
 const express = require('express');
 //PATH TO SSL CERTICATE AND KEY HERE 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
-//SET CHECKING INTERVALS
-setInterval(refresh_1.default.gameRefreshChecker, 60000);
-setInterval(refresh_1.default.translationsRefreshChecker, 60000);
-setInterval(refresh_1.default.premiumUserChecker, 60000);
+//SET CHECKING INTERVALS - CRON JOBS
+cron_1.default.runCronJobs();
 vocabpandaserver.use(express.json());
 //Generate api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {

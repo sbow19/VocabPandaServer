@@ -30,6 +30,16 @@ class vpModel {
         const sqlFormattedDate = strftime('%Y-%m-%d %H:%M:%S', membershipDelta.toDate());
         return sqlFormattedDate;
     }
+    ;
+    static getTokenExpiry() {
+        // Get current datetime
+        const currentDate = dayjs();
+        const tokenDelta = currentDate.add(1, "hour");
+        console.log(tokenDelta.toDate(), currentDate.format());
+        // Format the current datetime to SQL format
+        const sqlFormattedDate = strftime('%Y-%m-%d %H:%M:%S', tokenDelta.toDate());
+        return sqlFormattedDate;
+    }
     static getTranslationRefreshEndTime() {
         // Get current datetime
         const currentDate = dayjs();

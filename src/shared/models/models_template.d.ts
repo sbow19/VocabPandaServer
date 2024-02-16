@@ -5,6 +5,7 @@ declare class vpModel {
     static hash(): void;
     static getCurrentTime(): any;
     static getMembershipEndTime(): any;
+    static getTokenExpiry(): any;
     static getTranslationRefreshEndTime(): any;
     static getUsersDetailsDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>;
     static getUsersContentDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>;

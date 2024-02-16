@@ -2,8 +2,9 @@ require("dotenv").config();
 const uuid = require("uuid")
 import "module-alias/register";
 import UsersDatabase from "@shared/models/user_logins/users_db";
-import RefreshCounter from "@shared/updates/refresh/refresh";
+
 import * as appTypes from "@appTypes/appTypes"
+import CronClass from "@shared/updates/cron";
 
 const express = require('express');
 
@@ -12,14 +13,9 @@ const express = require('express');
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
 
-//SET CHECKING INTERVALS
+//SET CHECKING INTERVALS - CRON JOBS
 
-setInterval(RefreshCounter.gameRefreshChecker, 60000);
-
-setInterval(RefreshCounter.translationsRefreshChecker, 60000);
-
-setInterval(RefreshCounter.premiumUserChecker, 60000);
-
+CronClass.runCronJobs();
 
 vocabpandaserver.use(express.json());
 

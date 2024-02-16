@@ -39,7 +39,6 @@ DeeplAPI.post("/", async (req, res) => {
         });
         const { translations } = await translationResult.json();
         if (translations) {
-            console.log(translations);
             const translationsLeft = await user_details_db_1.default.updateTranslationsLeft(username);
             res.status(200).json({
                 translations,

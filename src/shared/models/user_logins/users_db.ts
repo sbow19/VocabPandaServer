@@ -119,6 +119,7 @@ class UsersDatabase extends vpModel {
     }
 
 
+    //#TODO, logic to provide app with details on premium status, verified, updates, refresh changes etc.
     static loginUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>> {
 
         return new Promise(async(resolve, reject)=>{
@@ -235,7 +236,7 @@ class UsersDatabase extends vpModel {
 
                     //Password hash
 
-                    const addUserSqlQuery =  `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT);` //id, username, email, password_hash
+                    const addUserSqlQuery =  `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT, 0);` //id, username, email, password_hash, verified
 
                     const addResult = await connectionResponseObject.mysqlConnection?.query(
                         addUserSqlQuery,
@@ -464,6 +465,237 @@ class UsersDatabase extends vpModel {
             }
         })
     }
+
+    //Save email verification token
+    static saveEmailVerification(token: string, email: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>{
+        return new Promise(async(resolve, reject)=>{
+
+            const dbAddResponseObject: appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig> = {
+                responseCode: 0, 
+                responseMessage: "Add unsuccessful", 
+                addMessage: "",
+                addType: "entry"
+            };
+
+            try{
+
+                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
+                    //If there is a failure to connect to the database, then we reject the promise
+                
+                    resolve(dbAddResponseObject)
+                    return
+                };
+
+                //Get token expiry (1 hour);
+
+                const tokenExpiry = super.getTokenExpiry(); 
+
+                //Save token, email, and token expiry
+                const saveVerificationQuery = `INSERT INTO verification VALUES (?, ?, ?);` //email, token, token_expiry
+                
+                await connectionResponseObject.mysqlConnection?.query(
+                    saveVerificationQuery, 
+                    [
+                        email,
+                        token,
+                        tokenExpiry
+                    ]
+                );
+
+                dbAddResponseObject.addMessage = "Token saved successfully";
+                dbAddResponseObject.responseMessage = "Add successful"
+                
+                resolve(dbAddResponseObject)
+                
+
+            }catch(e){
+
+                console.log(e);
+
+                //If there is some error...
+                dbAddResponseObject.addMessage = "Token could not be saved"
+                dbAddResponseObject.responseMessage = "Add unsuccessful"
+                reject(dbAddResponseObject)
+                
+            }
+        })
+    }
+
+    //Check email verification time
+
+    static checkEmailVerification(token: string): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>{
+        return new Promise(async(resolve, reject)=>{
+
+            const dbMatchResponseObject: appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig> = {
+                responseCode: 0, 
+                responseMessage: "No match found", 
+                matchMessage: ""
+            };
+
+            try{
+
+                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
+                    //If there is a failure to connect to the database, then we reject the promise
+                
+                    reject(dbMatchResponseObject);
+                    return
+                };
+
+                //Get current time
+
+                const currentTime = super.getCurrentTime();
+
+                //Check if token exists and has not expired
+                const checkVerificationQuery = `
+                SELECT * FROM verification 
+                WHERE token = ?
+                AND token_expiry > ?
+                ;` //token, currentTime
+                
+                const [queryResult] = await connectionResponseObject.mysqlConnection?.query(
+                    checkVerificationQuery, 
+                    [
+                        token,
+                        currentTime
+                    ]
+                );
+
+
+                if(queryResult.length === 1){
+
+                    dbMatchResponseObject.matchMessage = "Token saved successfully";
+                    dbMatchResponseObject.responseMessage = "Match found"
+                    
+                    resolve({dbMatchResponseObject, queryResult})
+                } else if (queryResult.length === 0){
+
+                    throw "error"
+                }
+
+            }catch(e){
+
+                console.log(e);
+
+                //If there is some error...
+                dbMatchResponseObject.matchMessage = "Token either expired or does not exist"
+                dbMatchResponseObject.responseMessage = "No match found"
+                reject(dbMatchResponseObject)
+                
+            }
+        })
+    }
+
+    //Delete  email verification  token
+
+    static deleteEmailVerification(token: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>{
+        return new Promise(async(resolve, reject)=>{
+
+            const dbDeleteResponseObject: appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig> = {
+                responseCode: 0, 
+                responseMessage: "Delete unsuccessful", 
+                deleteMessage: ""
+            };
+
+            try{
+
+                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
+                    //If there is a failure to connect to the database, then we reject the promise
+                
+                    reject(dbDeleteResponseObject)
+                    return
+                };
+
+                //Save token, email, and token expiry
+                const saveVerificationQuery = `DELETE FROM verification WHERE token =?;` //email
+                
+                await connectionResponseObject.mysqlConnection?.query(
+                    saveVerificationQuery, 
+                    [
+                        token
+                    ]
+                );
+
+                dbDeleteResponseObject.deleteMessage = "Token deleted successfully";
+                dbDeleteResponseObject.responseMessage = "Delete successful"
+                
+                resolve(dbDeleteResponseObject)
+                
+
+            }catch(e){
+
+                console.log(e);
+
+                //If there is some error...
+                dbDeleteResponseObject.deleteMessage = "Token could not be deleted"
+                dbDeleteResponseObject.responseMessage = "Delete unsuccessful"
+                reject(dbDeleteResponseObject)
+                
+            }
+        })
+    }
+
+    //Update verification status
+
+     //Check email verification time
+
+     static updateVerification(email: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>{
+        return new Promise(async(resolve, reject)=>{
+
+            const dbUpdateResponseObject: appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig> = {
+                responseCode: 0, 
+                responseMessage: "Update unsuccessful", 
+                updateMessage: ""
+            };
+
+            try{
+
+                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
+                    //If there is a failure to connect to the database, then we reject the promise
+                
+                    reject(dbUpdateResponseObject);
+                    return
+                };
+
+                //Update user verification status here
+                const updateVerificationQuery = `
+                UPDATE users 
+                SET verified = 1
+                WHERE email = ?
+                
+                ;` //email
+                
+                await connectionResponseObject.mysqlConnection?.query(
+                    updateVerificationQuery, 
+                    [
+                        email
+                    ]
+                );
+
+
+            
+                resolve(dbUpdateResponseObject)
+
+            }catch(e){
+
+                console.log(e);
+
+                //If there is some error...
+                dbUpdateResponseObject.updateMessage = "User verification status updated"
+                dbUpdateResponseObject.responseMessage = "Update successful"
+                reject(dbUpdateResponseObject)
+                
+            }
+        })
+    }
+
 
 }
 

@@ -42,12 +42,15 @@ class RefreshCounter {
                     }
                     await dbConnectionObject.mysqlConnection?.commit();
                     console.log('Updating game refreshes in database...');
+                    refreshErrorResponse.responseMessage = "Refresh complete";
+                    refreshErrorResponse.info = queryResults;
+                    resolve(refreshErrorResponse);
                 }
                 else if (queryResults.length === 0) {
                     refreshErrorResponse.responseMessage = "Refresh complete";
                     refreshErrorResponse.info = "No game entries refreshed";
-                    resolve(refreshErrorResponse);
                     console.log('No matches found at', currentTime);
+                    resolve(refreshErrorResponse);
                 }
             }
             catch (e) {
@@ -109,6 +112,9 @@ class RefreshCounter {
                     ;
                     await dbConnectionObject.mysqlConnection?.commit();
                     console.log('Updating translations in database...');
+                    refreshErrorResponse.responseMessage = "Refresh complete";
+                    refreshErrorResponse.info = queryResults;
+                    resolve(refreshErrorResponse);
                 }
                 else if (queryResults.length === 0) {
                     refreshErrorResponse.responseMessage = "Refresh complete";
@@ -153,11 +159,12 @@ class RefreshCounter {
                     for (let user of queryResults) {
                         const updateGameRefreshSqlQuery = `
                             UPDATE plays_left
-                            SET next plays_left = 10
+                            SET plays_left = 10
                             WHERE user_id = ?
                             ;
                         `;
-                        await dbConnectionObject.mysqlConnection?.query(updateGameRefreshSqlQuery, user.user_id);
+                        let result = await dbConnectionObject.mysqlConnection?.query(updateGameRefreshSqlQuery, user.user_id);
+                        console.log(result);
                     }
                     //update translations left
                     for (let user of queryResults) {
@@ -171,6 +178,9 @@ class RefreshCounter {
                     }
                     await dbConnectionObject.mysqlConnection?.commit();
                     console.log('Updating premium profiles in database...');
+                    refreshErrorResponse.responseMessage = "Refresh complete";
+                    refreshErrorResponse.info = queryResults;
+                    resolve(refreshErrorResponse);
                 }
                 else if (queryResults.length === 0) {
                     refreshErrorResponse.responseMessage = "Refresh complete";

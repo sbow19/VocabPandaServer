@@ -15,7 +15,7 @@ class CronClass {
         schedule.scheduleJob("* * * * *", function (){
             RefreshCounter.translationsRefreshChecker()});
 
-        schedule.scheduleJob("* * * * *", function(){RefreshCounter.premiumUserChecker()});
+        schedule.scheduleJob("* * * * *", async function(){RefreshCounter.premiumUserChecker()});
     };
 
 

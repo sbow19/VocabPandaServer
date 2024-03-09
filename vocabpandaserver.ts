@@ -8,7 +8,7 @@ import CronClass from "@shared/updates/cron";
 
 const express = require('express');
 
-//PATH TO SSL CERTICATE AND KEY HERE 
+//PATH TO SSL CERTIFICATE AND KEY HERE 
 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
@@ -19,7 +19,7 @@ CronClass.runCronJobs();
 
 vocabpandaserver.use(express.json());
 
-//Generate api_key
+//Generate device api_key
 
 vocabpandaserver.post("/generateapikey", async(req, res)=>{
 

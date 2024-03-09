@@ -135,6 +135,8 @@ AccountRouter.put("/updatepassword", async(req, res)=>{
     }
 });
 
+//Payment
+
 //Upgrade account to premium
 
 AccountRouter.put("/upgrade", async(req,res)=>{

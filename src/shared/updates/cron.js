@@ -15,7 +15,7 @@ class CronClass {
         schedule.scheduleJob("* * * * *", function () {
             refresh_1.default.translationsRefreshChecker();
         });
-        schedule.scheduleJob("* * * * *", function () { refresh_1.default.premiumUserChecker(); });
+        schedule.scheduleJob("* * * * *", async function () { refresh_1.default.premiumUserChecker(); });
     }
     ;
 }

@@ -9,13 +9,13 @@ require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const cron_1 = __importDefault(require("@shared/updates/cron"));
 const express = require('express');
-//PATH TO SSL CERTICATE AND KEY HERE 
+//PATH TO SSL CERTIFICATE AND KEY HERE 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
 //SET CHECKING INTERVALS - CRON JOBS
 cron_1.default.runCronJobs();
 vocabpandaserver.use(express.json());
-//Generate api_key
+//Generate device api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {
     try {
         //Get database connection

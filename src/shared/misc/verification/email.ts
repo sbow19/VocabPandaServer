@@ -33,7 +33,7 @@ class VocabPandaEmail {
                     from: "Gmail <zctlsab@gmail.com>",
                     to: "zctlsab@gmail.com",
                     subject: "Testing nodemail",
-                    text: `Click on this link to verify your email: http://192.168.1.171:3000/account/createaccount/verify?token=${token}`, 
+                    text: `Click on this link to verify your email: http://127.0.0.1:3000/account/createaccount/verify?token=${token}`, //Replace with IP of VPS 
             
                 });
             

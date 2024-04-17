@@ -10,12 +10,16 @@ class CronClass {
     static runCronJobs(){
         
         schedule.scheduleJob("* * * * *", function(){
-        RefreshCounter.gameRefreshChecker()});
+            RefreshCounter.gameRefreshChecker()
+        });
 
         schedule.scheduleJob("* * * * *", function (){
-            RefreshCounter.translationsRefreshChecker()});
+            RefreshCounter.translationsRefreshChecker()
+        });
 
-        schedule.scheduleJob("* * * * *", function(){RefreshCounter.premiumUserChecker()});
+        schedule.scheduleJob("* * * * *", function(){
+            RefreshCounter.premiumUserChecker()
+        });
     };
 
 

@@ -26,18 +26,19 @@ AccountRouter.post("/createaccount", async(req, res)=>{
         //get deviceid and API key
         const credentials = basicAuth(req);
 
+        //Check if password, username, and password is provided
         if(!credentials || !credentials.name || !credentials.pass){
             throw "No credentials provided"
         }
 
         //User creds parsed from http post request... This will be a post message
         userCreds = {
-        userName: req.body.userName,
-        password: hashedPassword,
-        email: req.body.email,
-        deviceId: credentials.name,
-        apiKey: credentials.pass
-    }
+            userName: req.body.userName,
+            password: hashedPassword,
+            email: req.body.email,
+            deviceId: credentials.name,
+            apiKey: credentials.pass
+        }
 
     } catch (e){
 
@@ -134,6 +135,8 @@ AccountRouter.put("/updatepassword", async(req, res)=>{
         res.status(500).send();
     }
 });
+
+//Payment
 
 //Upgrade account to premium
 

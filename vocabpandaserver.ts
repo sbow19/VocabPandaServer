@@ -1,14 +1,14 @@
 require("dotenv").config();
-const uuid = require("uuid")
+const uuid = require("uuid");
 import "module-alias/register";
 import UsersDatabase from "@shared/models/user_logins/users_db";
 
-import * as appTypes from "@appTypes/appTypes"
+import * as appTypes from "@appTypes/appTypes";
 import CronClass from "@shared/updates/cron";
 
 const express = require('express');
 
-//PATH TO SSL CERTICATE AND KEY HERE 
+//PATH TO SSL CERTIFICATE AND KEY HERE 
 
 const vocabpandaserver = express();
 const PORT = 3000 || process.env.PORT;
@@ -19,7 +19,7 @@ CronClass.runCronJobs();
 
 vocabpandaserver.use(express.json());
 
-//Generate api_key
+//Generate device api_key
 
 vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
@@ -38,7 +38,6 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
         const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
 
         if(queryResult.length === 0){
-            
             
             //new API key
             const newAPIKey = uuid.v4();
@@ -64,6 +63,7 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
     }catch(e){
 
+        //Error occurs while handling request. 
         res.status(500).send(e);
 
     }

@@ -21,6 +21,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
         hashedPassword = await bycrypt.hash(req.body.password, salt);
         //get deviceid and API key
         const credentials = basicAuth(req);
+        //Check if password, username, and password is provided
         if (!credentials || !credentials.name || !credentials.pass) {
             throw "No credentials provided";
         }
@@ -97,6 +98,7 @@ AccountRouter.put("/updatepassword", async (req, res) => {
         res.status(500).send();
     }
 });
+//Payment
 //Upgrade account to premium
 AccountRouter.put("/upgrade", async (req, res) => {
     try {

@@ -148,8 +148,7 @@ class RefreshCounter {
                     //Update membership end
                     for (let user of queryResults) {
                         const updatePremiumSqlQuery = `
-                            UPDATE premium_users
-                            SET membership_end = NULL
+                            DELETE FROM premium_users
                             WHERE user_id = ?
                             ;
                         `;
@@ -163,8 +162,7 @@ class RefreshCounter {
                             WHERE user_id = ?
                             ;
                         `;
-                        let result = await dbConnectionObject.mysqlConnection?.query(updateGameRefreshSqlQuery, user.user_id);
-                        console.log(result);
+                        await dbConnectionObject.mysqlConnection?.query(updateGameRefreshSqlQuery, user.user_id);
                     }
                     //update translations left
                     for (let user of queryResults) {

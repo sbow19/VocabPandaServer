@@ -33,9 +33,12 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
         const deviceId = req.body.deviceId;
 
+
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`
 
         const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
+
+        console.log(queryResult)
 
         if(queryResult.length === 0){
             
@@ -55,13 +58,25 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
             dbConnection.mysqlConnection?.commit()
 
-            res.send("Device id does not exist... generated new api key");
+            res.status(200).send({
+                message: "Device id does not exist... generated new api key",
+                APIKey: newAPIKey
+            }
+            );
 
-        } else if (queryResult > 0){
-            res.send("Device id already exists");
+        } else if (queryResult.length > 0){
+
+            res.status(200).send({
+                message: "Device id already exists.",
+                APIKey: queryResult[0].api_key 
+            });
+
+            
         };
 
     }catch(e){
+
+        console.log(e);
 
         //Error occurs while handling request. 
         res.status(500).send(e);

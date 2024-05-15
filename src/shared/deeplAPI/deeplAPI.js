@@ -13,17 +13,17 @@ DeeplAPI.use(express.json());
 DeeplAPI.use(authoriseRequest); //Check the device from which api call is made
 DeeplAPI.use(cors());
 DeeplAPI.post("/", async (req, res) => {
-    const username = req.body.userName;
-    const userRequest = req.body.userRequest;
+    const userRequest = req.body;
+    console.log(req.body);
     try {
         //Need to validate request string here (length);
-        if (userRequest.target_text.trim().length < 3) {
+        if (userRequest.text.trim().length < 3) {
             throw {
                 error: "String must be at least three characters long"
             };
         }
         //Need to check the database to see whether user is allowed to make translation;
-        await user_details_db_1.default.checkTranslationsLeft(username); //Promise rejected if no translations left
+        await user_details_db_1.default.checkTranslationsLeft(userRequest.username); //Promise rejected if no translations left
         const translationResult = await fetch("https://api-free.deepl.com/v2/translate", {
             method: "POST",
             headers: {
@@ -32,14 +32,15 @@ DeeplAPI.post("/", async (req, res) => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                "text": [`${userRequest.target_text}`],
-                "source_lang": `${userRequest.target_text_lang}`,
-                "target_lang": `${userRequest.output_lang}`
+                "text": [`${userRequest.text}`],
+                "source_lang": `${userRequest.source_lang}`,
+                "target_lang": `${userRequest.target_lang}`
             })
         });
+        console.log(translationResult);
         const { translations } = await translationResult.json();
         if (translations) {
-            const translationsLeft = await user_details_db_1.default.updateTranslationsLeft(username);
+            const translationsLeft = await user_details_db_1.default.updateTranslationsLeft(userRequest.username);
             res.status(200).json({
                 translations,
                 translationsLeft: translationsLeft
@@ -50,6 +51,8 @@ DeeplAPI.post("/", async (req, res) => {
         }
     }
     catch (e) {
+        console.log(e);
+        console.log(e.message);
         res.status(500).send(e);
     }
 });

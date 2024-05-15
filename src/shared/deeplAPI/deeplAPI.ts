@@ -15,14 +15,15 @@ DeeplAPI.use(cors());
 
 DeeplAPI.post("/", async(req, res)=>{
 
-    const username = req.body.userName;
-    const userRequest: appTypes.userRequest = req.body.userRequest
+    const userRequest = req.body;
+
+    console.log(req.body)
 
     try{
 
         //Need to validate request string here (length);
 
-        if(userRequest.target_text.trim().length < 3){
+        if(userRequest.text.trim().length < 3){
             throw {
                 error: "String must be at least three characters long"
             }
@@ -30,7 +31,7 @@ DeeplAPI.post("/", async(req, res)=>{
 
         //Need to check the database to see whether user is allowed to make translation;
 
-        await UserDetailsDatabase.checkTranslationsLeft(username); //Promise rejected if no translations left
+        await UserDetailsDatabase.checkTranslationsLeft(userRequest.username); //Promise rejected if no translations left
         
 
         const translationResult = await fetch(
@@ -42,20 +43,18 @@ DeeplAPI.post("/", async(req, res)=>{
                     "Content-Type": "application/json" 
                 },
                 body: JSON.stringify({
-                    "text":[`${userRequest.target_text}`],
-                    "source_lang": `${userRequest.target_text_lang}`,
-                    "target_lang":`${userRequest.output_lang}`
+                    "text":[`${userRequest.text}`],
+                    "source_lang": `${userRequest.source_lang}`,
+                    "target_lang":`${userRequest.target_lang}`
                 })
             }
-        )
-
+        );
 
         const {translations} = await translationResult.json();
-
-
+s
         if(translations){
 
-            const translationsLeft = await UserDetailsDatabase.updateTranslationsLeft(username);
+            const translationsLeft = await UserDetailsDatabase.updateTranslationsLeft(userRequest.username);
             
 
             res.status(200).json(
@@ -72,6 +71,8 @@ DeeplAPI.post("/", async(req, res)=>{
 
 
     }catch(e){
+        console.log(e);
+        console.log(e.message)
         res.status(500).send(e);
     }
 

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const models_template_1 = __importDefault(require("@shared/models/models_template"));
 const { v4: uuidv4 } = require('uuid');
 const strftime = require('strftime');
+const UserContentDBPool = require("./user_content_pool");
 class UsersContentDatabase extends models_template_1.default {
     static addNewProject(newProjectDetails, username) {
         return new Promise(async (resolve, reject) => {
@@ -21,22 +22,30 @@ class UsersContentDatabase extends models_template_1.default {
                 const userId = matchMessage;
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const addProjectSqlQuery = `INSERT INTO projects VALUES (?, ?, ?, ?);`; //user_id, project, target_lang, output_lang
-                await dbResponseObject.mysqlConnection?.query(addProjectSqlQuery, [
-                    userId,
-                    newProjectDetails.projectName,
-                    newProjectDetails.target_lang,
-                    newProjectDetails.output_lang
-                ]);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                dbAddResponseObject.responseMessage = "Add successful";
-                dbAddResponseObject.responseCode = 0;
-                dbAddResponseObject.addMessage = "New project added successfully";
-                dbAddResponseObject.addType = "project";
-                resolve(dbAddResponseObject);
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const addProjectSqlQuery = `INSERT INTO projects VALUES (?, ?, ?, ?);`; //user_id, project, target_lang, output_lang
+                    await dbResponseObject.mysqlConnection?.query(addProjectSqlQuery, [
+                        userId,
+                        newProjectDetails.projectName,
+                        newProjectDetails.target_lang,
+                        newProjectDetails.output_lang
+                    ]);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    dbAddResponseObject.responseMessage = "Add successful";
+                    dbAddResponseObject.responseCode = 0;
+                    dbAddResponseObject.addMessage = "New project added successfully";
+                    dbAddResponseObject.addType = "project";
+                    resolve(dbAddResponseObject);
+                }
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
             }
             catch (e) {
                 reject({ e, dbAddResponseObject });
@@ -57,30 +66,38 @@ class UsersContentDatabase extends models_template_1.default {
                 const userId = matchMessage;
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const addProjectSqlQuery = `DELETE FROM projects WHERE
-                    user_id = ?
-                AND 
-                    project =?
-                ;`;
-                let [queryResponse] = await dbResponseObject.mysqlConnection?.query(addProjectSqlQuery, [
-                    userId,
-                    projectName
-                ]);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                if (queryResponse.affectedRows === 0) {
-                    dbDeleteResponseObject.deleteMessage = "No rows affected";
-                    reject(dbDeleteResponseObject);
-                    return;
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const addProjectSqlQuery = `DELETE FROM projects WHERE
+                        user_id = ?
+                    AND 
+                        project =?
+                    ;`;
+                    let [queryResponse] = await dbResponseObject.mysqlConnection?.query(addProjectSqlQuery, [
+                        userId,
+                        projectName
+                    ]);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    if (queryResponse.affectedRows === 0) {
+                        dbDeleteResponseObject.deleteMessage = "No rows affected";
+                        reject(dbDeleteResponseObject);
+                        return;
+                    }
+                    else if (queryResponse.affectedRows > 0) {
+                        dbDeleteResponseObject.responseMessage = "Delete successful";
+                        dbDeleteResponseObject.responseCode = 0;
+                        dbDeleteResponseObject.deleteMessage = "Project deleted successfully";
+                        dbDeleteResponseObject.deleteType = "project";
+                        resolve(dbDeleteResponseObject);
+                    }
                 }
-                else if (queryResponse.affectedRows > 0) {
-                    dbDeleteResponseObject.responseMessage = "Delete successful";
-                    dbDeleteResponseObject.responseCode = 0;
-                    dbDeleteResponseObject.deleteMessage = "Project deleted successfully";
-                    dbDeleteResponseObject.deleteType = "project";
-                    resolve(dbDeleteResponseObject);
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
             }
             catch (e) {
@@ -110,59 +127,65 @@ class UsersContentDatabase extends models_template_1.default {
                 const entryId = uuidv4();
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const addNewEntrySqlQuery = `INSERT INTO user_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, DEFAULT, DEFAULT, ?);`;
-                /*
-                    user_id
-                    username
-                    entry_id
-                    target_language_text
-                    target_language
-                    output_language_text
-                    output_language
-                    tags
-                    created_at
-                    updated_at
-                    project
-                */
-                await dbResponseObject.mysqlConnection?.query(addNewEntrySqlQuery, [
-                    userId,
-                    username,
-                    entryId,
-                    newEntryObject.target_language_text,
-                    newEntryObject.target_language,
-                    newEntryObject.output_language_text,
-                    newEntryObject.output_language,
-                    tags,
-                    newEntryObject.project
-                ]);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //add tags query
-                const insertTagDetailsSqlQuery = `INSERT INTO entry_tags VALUES (?, ?)`; //tag_id, entry_id
-                if (tags > 0) {
-                    for (let tagId of newEntryObject.tags) {
-                        await dbResponseObject.mysqlConnection?.query(insertTagDetailsSqlQuery, [
-                            tagId,
-                            entryId
-                        ]);
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const addNewEntrySqlQuery = `INSERT INTO user_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, DEFAULT, DEFAULT, ?);`;
+                    /*
+                        user_id
+                        username
+                        entry_id
+                        target_language_text
+                        target_language
+                        output_language_text
+                        output_language
+                        tags
+                        created_at
+                        updated_at
+                        project
+                    */
+                    await dbResponseObject.mysqlConnection?.query(addNewEntrySqlQuery, [
+                        userId,
+                        username,
+                        entryId,
+                        newEntryObject.target_language_text,
+                        newEntryObject.target_language,
+                        newEntryObject.output_language_text,
+                        newEntryObject.output_language,
+                        tags,
+                        newEntryObject.project
+                    ]);
+                    //add tags query
+                    const insertTagDetailsSqlQuery = `INSERT INTO entry_tags VALUES (?, ?)`; //tag_id, entry_id
+                    if (tags > 0) {
+                        for (let tagId of newEntryObject.tags) {
+                            await dbResponseObject.mysqlConnection?.query(insertTagDetailsSqlQuery, [
+                                tagId,
+                                entryId
+                            ]);
+                        }
                     }
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    addEntryResponseObject.responseMessage = "Add successful";
+                    addEntryResponseObject.responseCode = 0;
+                    addEntryResponseObject.addMessage = "New entry added successfully";
+                    addEntryResponseObject.addType = "entry";
+                    resolve(addEntryResponseObject);
                 }
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                addEntryResponseObject.responseMessage = "Add successful";
-                addEntryResponseObject.responseCode = 0;
-                addEntryResponseObject.addMessage = "New entry added successfully";
-                addEntryResponseObject.addType = "entry";
-                resolve(addEntryResponseObject);
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
             }
             catch (e) {
                 reject({ e, addEntryResponseObject });
             }
         });
     }
-    //TODO - finish update entry
     static updateEntry(updateObject, entryId) {
         return new Promise(async (resolve, reject) => {
             const updateEntryResponseObject = {
@@ -179,63 +202,70 @@ class UsersContentDatabase extends models_template_1.default {
                 ;
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const updateEntrySqlQuery = `UPDATE user_entries
-                  SET 
-                    target_language_text = ?,
-                    target_language = ?,
-                    output_language_text = ?,  
-                    output_language = ?,
-                    tags = ?
-                  WHERE entry_id = ?
-                  ;`;
-                /*
-                    user_id
-                    username
-                    entry_id
-                    target_language_text
-                    target_language
-                    output_language_text
-                    output_language
-                    tags
-                    created_at
-                    updated_at
-                    project
-                */
-                await dbResponseObject.mysqlConnection?.query(updateEntrySqlQuery, [
-                    updateObject.target_language_text,
-                    updateObject.target_language,
-                    updateObject.output_language_text,
-                    updateObject.output_language,
-                    tags,
-                    entryId
-                ]);
-                await dbResponseObject.mysqlConnection?.commit(); // end update project transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //update tags query
-                /*
-                        Remove tags for the entry and then add them anew
-                */
-                const removeTagDetailsSqlQuery = `DELETE FROM entry_tags WHERE entry_id = ?;`; //tag_id, entry_id
-                const insertTagDetailsSqlQuery = "INSERT INTO entry_tags VALUES (?, ?);";
-                if (tags > 0) {
-                    // Remove all tags associated with entry_id, and then  re add them.
-                    await dbResponseObject.mysqlConnection?.query(removeTagDetailsSqlQuery, entryId);
-                    for (let tagId of updateObject.tags) {
-                        await dbResponseObject.mysqlConnection?.query(insertTagDetailsSqlQuery, [
-                            tagId,
-                            entryId
-                        ]);
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const updateEntrySqlQuery = `UPDATE user_entries
+                    SET 
+                        target_language_text = ?,
+                        target_language = ?,
+                        output_language_text = ?,  
+                        output_language = ?,
+                        tags = ?
+                    WHERE entry_id = ?
+                    ;`;
+                    /*
+                        user_id
+                        username
+                        entry_id
+                        target_language_text
+                        target_language
+                        output_language_text
+                        output_language
+                        tags
+                        created_at
+                        updated_at
+                        project
+                    */
+                    await dbResponseObject.mysqlConnection?.query(updateEntrySqlQuery, [
+                        updateObject.target_language_text,
+                        updateObject.target_language,
+                        updateObject.output_language_text,
+                        updateObject.output_language,
+                        tags,
+                        entryId
+                    ]);
+                    //update tags query
+                    /*
+                            Remove tags for the entry and then add them anew
+                    */
+                    const removeTagDetailsSqlQuery = `DELETE FROM entry_tags WHERE entry_id = ?;`; //tag_id, entry_id
+                    const insertTagDetailsSqlQuery = "INSERT INTO entry_tags VALUES (?, ?);";
+                    if (tags > 0) {
+                        // Remove all tags associated with entry_id, and then  re add them.
+                        await dbResponseObject.mysqlConnection?.query(removeTagDetailsSqlQuery, entryId);
+                        for (let tagId of updateObject.tags) {
+                            await dbResponseObject.mysqlConnection?.query(insertTagDetailsSqlQuery, [
+                                tagId,
+                                entryId
+                            ]);
+                        }
                     }
+                    ;
+                    await dbResponseObject.mysqlConnection?.commit(); // commit update entry transaction
+                    updateEntryResponseObject.responseMessage = "Update successful";
+                    updateEntryResponseObject.responseCode = 0;
+                    updateEntryResponseObject.updateMessage = "Update successful";
+                    resolve(updateEntryResponseObject);
                 }
-                ;
-                await dbResponseObject.mysqlConnection?.commit(); // end update entry transaction
-                updateEntryResponseObject.responseMessage = "Update successful";
-                updateEntryResponseObject.responseCode = 0;
-                updateEntryResponseObject.updateMessage = "Update successful";
-                resolve(updateEntryResponseObject);
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
             }
             catch (e) {
                 reject({ e, updateEntryResponseObject });
@@ -253,23 +283,32 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const deleteEntrySqlQuery = `DELETE FROM user_entries WHERE entry_id = ?;`;
-                let [queryResponse] = await dbResponseObject.mysqlConnection?.query(deleteEntrySqlQuery, entryId);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                if (queryResponse.affectedRows === 0) {
-                    deleteEntryResponseObject.deleteMessage = "No rows affected";
-                    reject(deleteEntryResponseObject);
-                    return;
+                try {
+                    //Begin transaction  
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const deleteEntrySqlQuery = `DELETE FROM user_entries WHERE entry_id = ?;`;
+                    let [queryResponse] = await dbResponseObject.mysqlConnection?.query(deleteEntrySqlQuery, entryId);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    if (queryResponse.affectedRows === 0) {
+                        deleteEntryResponseObject.deleteMessage = "No rows affected";
+                        reject(deleteEntryResponseObject);
+                        return;
+                    }
+                    else if (queryResponse.affectedRows > 0) {
+                        deleteEntryResponseObject.responseMessage = "Delete successful";
+                        deleteEntryResponseObject.responseCode = 0;
+                        deleteEntryResponseObject.deleteMessage = "New entry deleted successfully";
+                        deleteEntryResponseObject.deleteType = "entry";
+                        resolve(deleteEntryResponseObject);
+                    }
                 }
-                else if (queryResponse.affectedRows > 0) {
-                    deleteEntryResponseObject.responseMessage = "Delete successful";
-                    deleteEntryResponseObject.responseCode = 0;
-                    deleteEntryResponseObject.deleteMessage = "New entry deleted successfully";
-                    deleteEntryResponseObject.deleteType = "entry";
-                    resolve(deleteEntryResponseObject);
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
             }
             catch (e) {
@@ -293,26 +332,35 @@ class UsersContentDatabase extends models_template_1.default {
                 const tagId = uuidv4();
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new tag details
-                const addNewEntrySqlQuery = `INSERT INTO user_tags VALUES (?, ?, ?);`;
-                /*
-                    user_id
-                    tag_name
-                    tag_id
-                */
-                await dbResponseObject.mysqlConnection?.query(addNewEntrySqlQuery, [
-                    userId,
-                    tagName,
-                    tagId
-                ]);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                addTagResponseObject.responseMessage = "Add successful";
-                addTagResponseObject.responseCode = 0;
-                addTagResponseObject.addMessage = "New tag added successfully";
-                addTagResponseObject.addType = "tag";
-                resolve(addTagResponseObject);
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new tag details
+                    const addNewEntrySqlQuery = `INSERT INTO user_tags VALUES (?, ?, ?);`;
+                    /*
+                        user_id
+                        tag_name
+                        tag_id
+                    */
+                    await dbResponseObject.mysqlConnection?.query(addNewEntrySqlQuery, [
+                        userId,
+                        tagName,
+                        tagId
+                    ]);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    addTagResponseObject.responseMessage = "Add successful";
+                    addTagResponseObject.responseCode = 0;
+                    addTagResponseObject.addMessage = "New tag added successfully";
+                    addTagResponseObject.addType = "tag";
+                    resolve(addTagResponseObject);
+                }
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
             }
             catch (e) {
                 reject({ e, addTagResponseObject });
@@ -330,23 +378,32 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
-                //Begin transaction
-                await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                //Add new user details
-                const deleteEntrySqlQuery = `DELETE FROM user_tags WHERE tag_id = ?;`;
-                let [queryResponse] = await dbResponseObject.mysqlConnection?.query(deleteEntrySqlQuery, tagId);
-                await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-                if (queryResponse.affectedRows === 0) {
-                    deleteTagResponseObject.deleteMessage = "No rows affected";
-                    reject(deleteTagResponseObject);
-                    return;
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Add new user details
+                    const deleteEntrySqlQuery = `DELETE FROM user_tags WHERE tag_id = ?;`;
+                    let [queryResponse] = await dbResponseObject.mysqlConnection?.query(deleteEntrySqlQuery, tagId);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    if (queryResponse.affectedRows === 0) {
+                        deleteTagResponseObject.deleteMessage = "No rows affected";
+                        reject(deleteTagResponseObject);
+                        return;
+                    }
+                    else if (queryResponse.affectedRows > 0) {
+                        deleteTagResponseObject.responseMessage = "Delete successful";
+                        deleteTagResponseObject.responseCode = 0;
+                        deleteTagResponseObject.deleteMessage = "Tag deleted successfully";
+                        deleteTagResponseObject.deleteType = "tag";
+                        resolve(deleteTagResponseObject);
+                    }
                 }
-                else if (queryResponse.affectedRows > 0) {
-                    deleteTagResponseObject.responseMessage = "Delete successful";
-                    deleteTagResponseObject.responseCode = 0;
-                    deleteTagResponseObject.deleteMessage = "Tag deleted successfully";
-                    deleteTagResponseObject.deleteType = "tag";
-                    resolve(deleteTagResponseObject);
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
             }
             catch (e) {

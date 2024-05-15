@@ -11,8 +11,6 @@ class VocabPandaEmail {
         return new Promise(async (resolve, reject) => {
             const token = crypto.randomBytes(32).toString('hex');
             try {
-                //save token in database
-                let dbSaveResult = await users_db_1.default.saveEmailVerification(token, email);
                 const transporter = nodemailer.createTransport({
                     service: "gmail",
                     port: 465,
@@ -20,17 +18,24 @@ class VocabPandaEmail {
                     auth: {
                         user: "zctlsab@gmail.com",
                         pass: "vuix pcmm wqjx ghdj"
-                    }
+                    },
+                    connectionTimeout: 10000, // 10 seconds
+                    socketTimeout: 15000, // 10 seconds
+                    greetingTimeout: 5000, // 10 seconds
                 });
-                const info = await transporter.sendMail({
+                const result = await transporter.sendMail({
                     from: "Gmail <zctlsab@gmail.com>",
-                    to: "zctlsab@gmail.com",
+                    to: email,
                     subject: "Testing nodemail",
-                    text: `Click on this link to verify your email: http://127.0.0.1:3000/account/createaccount/verify?token=${token}`, //Replace with IP of VPS 
+                    text: `Click on this link to verify your email: http://192.168.1.254:3000/account/createaccount/verify?token=${token}`, //Replace with IP of VPS 
                 });
-                resolve(console.log("Message sent: " + info.messageId));
+                console.log(result);
+                //save token in database if email successfully sent, otherwise we skip.
+                await users_db_1.default.saveEmailVerification(token, email);
+                resolve(console.log("Message sent: " + result.messageId));
             }
             catch (e) {
+                console.log(e, "Error with nodemail connection");
                 reject(e);
             }
         });

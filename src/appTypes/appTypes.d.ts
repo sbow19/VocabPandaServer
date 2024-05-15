@@ -2,8 +2,8 @@ import * as mysql from "mysql2"
 
 
     export type UserCredentials = {
-        userName?: string
-        password: string
+        username?: string
+        password?: string
         email?: string,
         deviceId?: string,
         apiKey?: string,
@@ -37,7 +37,7 @@ import * as mysql from "mysql2"
     export type DBResponseObjectConfig = {
         responseCodeOptions: 0 | 1 | 2
         responseMessageOptions: "Connection successful" | "Connection unsuccessful"
-        mysqlConnection: mysql.Connection | null
+        mysqlConnection: mysql.PoolConnection | null
     }
 
     //DB response template for matching in database
@@ -45,7 +45,8 @@ import * as mysql from "mysql2"
     export type DBMatchResponseObject<DBMatchResponseConfig extends Record<string, any>> = 
 
         ResponseObject<DBMatchResponseConfig["responseCodeOptions"], DBMatchResponseConfig["responseMessageOptions"]> & {
-           matchMessage: DBMatchResponseConfig["matchMessage"];
+           matchMessage: DBMatchResponseConfig["matchMessage"]
+           matchType: "email" | "username" | "" | "email & username"
 
     }
 
@@ -53,6 +54,7 @@ import * as mysql from "mysql2"
         responseCodeOptions: 0 | 1 | 2
         responseMessageOptions: "Match found" | "No match found"
         matchMessage: string
+
         
     }
 
@@ -208,7 +210,7 @@ deleteType: "project" | "entry" | "tag"
 
     export type UsersLoginsDB = {
         mysqlConnection: mysql.Connection
-        tables: "users" | "api_keys"
+        tables: "users" | "api_keys" | "verification"
         userCredentials?: UserCredentials
     }
 
@@ -247,6 +249,15 @@ deleteType: "project" | "entry" | "tag"
         responseMessage: "Refresh complete" | "Refresh unsuccessful"
         info: string
 
+    }
+
+    //User verification
+
+    export type EmailVerificationResponse = {
+
+        responseMessage: "Check complete" | "Check unsuccessful"
+        info: string
+        errorMessage?: Error | null
     }
 
 

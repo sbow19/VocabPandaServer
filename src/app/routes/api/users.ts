@@ -14,38 +14,48 @@ usersRouter.use(authoriseRequest);
 //Login
 usersRouter.post("/", async(req, res)=>{
 
-    const credentials = basicAuth(req);
+    const loginResultObject = req.body.loginResultObject;
 
-    //Replace with req.body
-    const userCredentials: appTypes.UserCredentials = {
-        userName: req.body.userName,
-        password: req.body.password,
-        deviceId: credentials.name,
-        apiKey: credentials.pass,
-        identifierType: req.body.identifierType
-    };
-
-
-    try{
-        const dbMatchResponse = await UsersDatabase.loginUser(userCredentials);
+    //Check whether login was successful locally. Otherwise, we need to conduct login here.
+    if(loginResultObject.loginSuccess){
         
-        if(dbMatchResponse.matchMessage === "Username or password does not match"){
-            res.status(200).send("Your details are incorrect")
-        }
-        if(dbMatchResponse.matchMessage === "User credentials verified"){
+        try{
 
-
-            let dbUpdateResponseObject = await UserDetailsDatabase.updateLastLoggedIn(dbMatchResponse.username)
+            const dbUpdateResponseObject = await UserDetailsDatabase.updateLastLoggedIn(loginResultObject.username)
             //Trigger sync middleware procedure
-            res.send(dbUpdateResponseObject)
+            res.status(200).send(dbUpdateResponseObject)
+
+
+        }catch(e){
+
+            res.status(500).send("Backend error");
+        }
+        
+    } else if(!loginResultObject.loginSuccess){
+
+        try{
+            const dbMatchResponse = await UsersDatabase.loginUser(userCredentials);
+            
+            if(dbMatchResponse.matchMessage === "Username or password does not match"){
+                res.status(200).send("Your details are incorrect")
+            }
+            if(dbMatchResponse.matchMessage === "User credentials verified"){
+    
+                let dbUpdateResponseObject = await UserDetailsDatabase.updateLastLoggedIn(dbMatchResponse.username)
+                //Trigger sync middleware procedure
+                res.send(dbUpdateResponseObject)
+    
+            }
+    
+        }catch(e){
+    
+            res.status(500).send(e)
 
         }
-
-    }catch(e){
-
-        res.send(e)
 
     }
+
+    
 });
 
 

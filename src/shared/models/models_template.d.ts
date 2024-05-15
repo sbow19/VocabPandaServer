@@ -2,7 +2,6 @@ import * as appTypes from "@appTypes/appTypes";
 declare class vpModel {
     constructor();
     static generateUUID(): string;
-    static hash(): void;
     static getCurrentTime(): any;
     static getMembershipEndTime(): any;
     static getTokenExpiry(): any;

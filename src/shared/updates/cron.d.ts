@@ -1,5 +1,5 @@
 declare class CronClass {
-    constructor();
+    #private;
     static runCronJobs(): void;
 }
 export default CronClass;

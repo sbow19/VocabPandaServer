@@ -3,7 +3,10 @@ const {v4: uuidv4} = require('uuid');
 import * as appTypes from "@appTypes/appTypes"
 const mysql = require("mysql2/promise");
 const strftime = require("strftime");
-const dayjs = require("dayjs")
+const dayjs = require("dayjs");
+const UserDBPool = require("./user_logins/users_db_pool");
+const UserDetailsDBPool = require("./user_details/user_details_pool");
+const UserContentDBPool = require("./user_content/user_content_pool");
 
 class vpModel {
     constructor(){
@@ -17,8 +20,6 @@ class vpModel {
         return UUID
 
     };
-
-    static hash(){};
 
     static getCurrentTime(){
         // Get current datetime
@@ -69,8 +70,6 @@ class vpModel {
         return sqlFormattedDate
     }
 
-
-
     static getUsersDetailsDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
 
         return new Promise(async(resolve, reject)=>{
@@ -83,12 +82,7 @@ class vpModel {
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await mysql.createConnection({
-                    user: process.env.DB_USER,
-                    host: process.env.DB_HOST,
-                    database: "user_details",
-                    password: process.env.DB_PASSWORD
-                })
+                const databaseConnection: mysqlTypes.Connection = await UserDetailsDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
@@ -117,12 +111,7 @@ class vpModel {
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await mysql.createConnection({
-                    user: process.env.DB_USER,
-                    host: process.env.DB_HOST,
-                    database: "user_content",
-                    password: process.env.DB_PASSWORD
-                })
+                const databaseConnection: mysqlTypes.Connection = await UserContentDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
@@ -153,12 +142,7 @@ class vpModel {
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await mysql.createConnection({
-                    user: process.env.DB_USER,
-                    host: process.env.DB_HOST,
-                    database: "user_logins",
-                    password: process.env.DB_PASSWORD
-                })
+                const databaseConnection: mysqlTypes.Connection = await UserDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
@@ -187,10 +171,11 @@ class vpModel {
                 responseCode: 0,
                 responseMessage: "No match found",
                 matchMessage: ""
-            }
+            };
 
             try{
-                const usersDBResponseObject = await this.getUsersDBConnection();
+
+                const usersDBResponseObject = await this.getUsersDBConnection(); //Gets pool connection
 
                 if(usersDBResponseObject.responseMessage === "Connection unsuccessful"){
 
@@ -199,27 +184,41 @@ class vpModel {
                     return
                 }
 
-                const fetchUserId = `
-                    SELECT id FROM users
-                    WHERE username = ?
-                    ;
-                `
+                //Attempt sql queries
+                try{
+                    const fetchUserId = `
+                        SELECT id FROM users
+                        WHERE username = ?
+                        ;
+                    `
 
-                const [databaseResult] = await usersDBResponseObject.mysqlConnection?.query(
-                    fetchUserId,
-                    username
-                );
+                    const [databaseResult] = await usersDBResponseObject.mysqlConnection?.query(
+                        fetchUserId,
+                        username
+                    );
 
-                let userId = databaseResult[0].id
+                    const userId = databaseResult[0].id
 
-                DBMatchResponseObject.matchMessage = userId;
-                DBMatchResponseObject.responseMessage = "Match found"
+                    DBMatchResponseObject.matchMessage = userId;
+                    DBMatchResponseObject.responseMessage = "Match found"
 
-                resolve(DBMatchResponseObject)
+                    resolve(DBMatchResponseObject);
+                    
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release connection regardless of search outcome
+                    UserDBPool.releaseConnection(usersDBResponseObject.mysqlConnection);
+                };
+
             }catch(e){
-                reject(DBMatchResponseObject)
+
+                console.log(e);
+                console.log(console.trace());
+                reject(DBMatchResponseObject);
+
             }
-        })
+    })
     }
 }
 

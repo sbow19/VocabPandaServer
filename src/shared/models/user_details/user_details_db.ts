@@ -2,6 +2,7 @@ import * as appTypes from "@appTypes/appTypes"
 import * as mysqlTypes from "mysql2"
 import vpModel from "@shared/models/models_template";
 const strftime = require('strftime');
+const UserDetailsDBPool = require("./user_details_pool");
 
 class UserDetailsDatabase extends vpModel {
 
@@ -24,66 +25,78 @@ class UserDetailsDatabase extends vpModel {
 
                 if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
                     //If there is a failure to connect to the database, then we reject the promise
-                    dbAddUserResponseObject.responseMessage =  "New user could not be added"
-                    reject(dbAddUserResponseObject)
+                    dbAddUserResponseObject.responseMessage =  "New user could not be added";
+                    dbAddUserResponseObject.addMessage = "Connection to users details database failed. Setup failed."
+                    
+                    const dbAddUserError = new Error("Error creating user", {
+                        cause: dbAddUserResponseObject
+                    });
+
+                    reject(dbAddUserError)
                     return
                 }
 
-                //Begin transaction
+                try{
 
-                await connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                    //Begin transaction
+                    await connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
 
-                //Add new user details
+                    //Add new user details
+                    const addUserSqlQuery =  `INSERT INTO user_details VALUES (?, ?, ?, ?);` //username, id, last_logged_in, premium
 
-                const addUserSqlQuery =  `INSERT INTO user_details VALUES (?, ?, ?, ?);` //username, id, last_logged_in, premium
+                    await connectionResponseObject.mysqlConnection?.query(
+                        addUserSqlQuery,
+                        [
+                            userCredentials.username,
+                            userId,
+                            sqlFormattedDate,
+                            0
+                        ])
+            
+                    //Add user default settings
+                    const addUserSettingsSqlQuery =  `INSERT INTO user_settings VALUES (?, ?, ?, ?, ?, ?);` //user_id, timer_on, slider_val, target_lang, output_lang, default_project
 
-                await connectionResponseObject.mysqlConnection?.query(
-                    addUserSqlQuery,
-                    [
-                        userCredentials.userName,
-                        userId,
-                        sqlFormattedDate,
-                        0
-                    ])
-        
-                //Add user default settings
+                    await connectionResponseObject.mysqlConnection?.query(
+                        addUserSettingsSqlQuery,
+                        [
+                            userId, //User id 
+                            0, // timer set to false
+                            10, //default no of turns in one flashcard play
+                            "EN", //default target language is English
+                            "EN", //default output language is English
+                            "",  //No default project set yet. 
+                        ])
+                    
+                    //Add x plays/ translations left and refresh times
 
-                const addUserSettingsSqlQuery =  `INSERT INTO user_settings VALUES (?, ?, ?, ?, ?, ?);` //user_id, timer_on, slider_val, target_lang, output_lang, default_project
-
-                await connectionResponseObject.mysqlConnection?.query(
-                    addUserSettingsSqlQuery,
-                    [
-                        userId, //User id 
-                        0, // timer set to false
-                        10, //default no of turns in one flashcard play
-                        "EN", //default target language is English
-                        "EN", //default output language is English
-                        "",  //No default project set yet. 
-                    ])
-                
-                //Add x plays/ translations left and refresh times
-
-                const nextPlaysSqlQuery =  `INSERT INTO next_plays_refresh VALUES (?, ?);` //user_id, game_refresh
-                const nextTranslationsSqlQuery =  `INSERT INTO next_translations_refresh VALUES (?, ?);` //user_id, translations_refresh
-                const playLeftSqlQuery =  `INSERT INTO plays_left VALUES (?, ?);` //user_id, plays_left
-                const translationsLeftSqlQuery =  `INSERT INTO translation_left VALUES (?, ?);` //user_id, translation_left
-
-
-                await connectionResponseObject.mysqlConnection?.query(nextPlaysSqlQuery, [userId, null]);
-                await connectionResponseObject.mysqlConnection?.query(nextTranslationsSqlQuery, [userId, null]);
-                await connectionResponseObject.mysqlConnection?.query(playLeftSqlQuery, [userId, 10]);
-                await connectionResponseObject.mysqlConnection?.query(translationsLeftSqlQuery, [userId, 40]);
-        
+                    const nextPlaysSqlQuery =  `INSERT INTO next_plays_refresh VALUES (?, ?);` //user_id, game_refresh
+                    const nextTranslationsSqlQuery =  `INSERT INTO next_translations_refresh VALUES (?, ?);` //user_id, translations_refresh
+                    const playLeftSqlQuery =  `INSERT INTO plays_left VALUES (?, ?);` //user_id, plays_left
+                    const translationsLeftSqlQuery =  `INSERT INTO translation_left VALUES (?, ?);` //user_id, translation_left
 
 
-                await connectionResponseObject.mysqlConnection?.commit(); // end add new user transaction
+                    await connectionResponseObject.mysqlConnection?.query(nextPlaysSqlQuery, [userId, null]);
+                    await connectionResponseObject.mysqlConnection?.query(nextTranslationsSqlQuery, [userId, null]);
+                    await connectionResponseObject.mysqlConnection?.query(playLeftSqlQuery, [userId, 10]);
+                    await connectionResponseObject.mysqlConnection?.query(translationsLeftSqlQuery, [userId, 40]);
+            
 
-                dbAddUserResponseObject.responseMessage = "New user added";
-                dbAddUserResponseObject.responseCode = 0;
-                dbAddUserResponseObject.addMessage = "User details added successfully"
 
-                resolve(dbAddUserResponseObject)
-                
+                    await connectionResponseObject.mysqlConnection?.commit(); // commit add new user transaction        
+
+                    dbAddUserResponseObject.responseMessage = "New user added";
+                    dbAddUserResponseObject.responseCode = 0;
+                    dbAddUserResponseObject.addMessage = "User details added successfully"
+
+                    resolve(dbAddUserResponseObject)
+
+                }catch(e){
+                    throw e
+                }finally{
+
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                }
 
             }catch(e){
 
@@ -114,71 +127,79 @@ class UserDetailsDatabase extends vpModel {
                 if(dbResponseObject.responseMessage === "Connection unsuccessful"){
                     reject(dbUpdateResponseObject);
                     return
+                };
+
+                try{
+
+                    //start db transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err})
+
+                    //Get user Id
+                    const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
+
+                    const userId = matchMessage
+
+                    //upgrade user in user details database
+
+                    const upgradeSqlStatement = `
+
+                    UPDATE user_details
+                    SET premium = 1
+                    WHERE username = ?;
+                    `
+
+                    const updateResult = await dbResponseObject.mysqlConnection.query(
+                        upgradeSqlStatement,
+                        username
+                    );
+
+
+                    //Add details to user_details.premium_users
+
+                    const membershipEndTime = super.getMembershipEndTime();
+
+                    const savePremiumInfoSql = `INSERT INTO premium_users VALUES(?, ?, ?);`  //user_id,  username, membership_end
+
+                    await dbResponseObject.mysqlConnection?.query(
+                        savePremiumInfoSql,
+                        [
+                            userId,
+                            username,
+                            membershipEndTime
+                        ]
+                    )
+
+                    //Update x games and refresh times
+
+                    const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
+                    const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
+                    const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
+                    const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
+
+
+                    await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
+                    await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
+                    await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [null, userId]);
+                    await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [120, userId]);
+
+                    //Commit db transaction 
+                    dbResponseObject.mysqlConnection?.commit();
+
+                    //Configure response object on success
+                    dbUpdateResponseObject.responseMessage = "Upgrade successful"
+                    
+                    resolve(dbUpdateResponseObject);
+
+
+                }catch(e){
+                    throw e
+                }finally{
+
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
 
-                //start db transaction
-
-                await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err})
-
-                //Get user Id
-
-                const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
-
-                const userId = matchMessage
-
-                //upgrade user in user details database
-
-                const upgradeSqlStatement = `
-
-                UPDATE user_details
-                SET premium = 1
-                WHERE username = ?;
-                `
-
-                const updateResult = await dbResponseObject.mysqlConnection.query(
-                    upgradeSqlStatement,
-                    username
-                );
-
-
-                //Add details to user_details.premium_users
-
-                const membershipEndTime = super.getMembershipEndTime();
-
-                const savePremiumInfoSql = `INSERT INTO premium_users VALUES(?, ?, ?);`  //user_id,  username, membership_end
-
-                await dbResponseObject.mysqlConnection?.query(
-                    savePremiumInfoSql,
-                    [
-                        userId,
-                        username,
-                        membershipEndTime
-                    ]
-                )
-
-                //Update x games and refresh times
-
-                const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
-                const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
-                const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
-                const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
-
-
-                await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
-                await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
-                await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [null, userId]);
-                await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [120, userId]);
-
-                //End db transaction 
-
-                dbResponseObject.mysqlConnection?.commit()
-
-                //Configure response object on success
-
-                dbUpdateResponseObject.responseMessage = "Upgrade successful"
                 
-                resolve(dbUpdateResponseObject);
-
             }catch(e){
 
                 console.log(e)
@@ -207,63 +228,70 @@ class UserDetailsDatabase extends vpModel {
                     return
                 }
 
-                //Start transaction 
-                dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                try{
 
-                //upgrade user in user details database
+                     //Start transaction 
+                    dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
 
-                const downgradeSqlStatement = `
+                    //upgrade user in user details database
 
-                UPDATE user_details
-                SET premium = 0
-                WHERE username = ?;
-                `
+                    const downgradeSqlStatement = `
 
-                const downgradeResult = await dbResponseObject.mysqlConnection.query(
-                    downgradeSqlStatement,
-                    username
-                );
+                    UPDATE user_details
+                    SET premium = 0
+                    WHERE username = ?;
+                    `
 
-
-                //Get user Id
-
-                const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
-
-                const userId = matchMessage;
-
-                //Remove details to user_details.premium_users
-
-                const removePremiumInfoSql = `DELETE FROM premium_users WHERE user_id = ?;`  //user_id
-
-                await dbResponseObject.mysqlConnection?.query(removePremiumInfoSql, userId);
-
-                //Update x games and refresh times
-
-                const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
-                const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
-                const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
-                const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
+                    const downgradeResult = await dbResponseObject.mysqlConnection.query(
+                        downgradeSqlStatement,
+                        username
+                    );
 
 
-                await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
-                await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
-                await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [10, userId]);
-                await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [40, userId]);
+                    //Get user Id
+                    const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
 
-                //End db transaction 
+                    const userId = matchMessage;
 
-                dbResponseObject.mysqlConnection?.commit()
+                    //Remove details to user_details.premium_users
+                    const removePremiumInfoSql = `DELETE FROM premium_users WHERE user_id = ?;`  //user_id
 
-                //Configure response object on success
+                    await dbResponseObject.mysqlConnection?.query(removePremiumInfoSql, userId);
 
-                dbUpdateResponseObject.responseMessage = "Downgrade successful";
-                
-                resolve(dbUpdateResponseObject);
+                    //Update x games and refresh times
+                    const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
+                    const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
+                    const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
+                    const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
+
+
+                    await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
+                    await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
+                    await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [10, userId]);
+                    await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [40, userId]);
+
+                    //Commit db transaction 
+
+                    dbResponseObject.mysqlConnection?.commit()
+
+                    //Configure response object on success
+
+                    dbUpdateResponseObject.responseMessage = "Downgrade successful";
+                    
+                    resolve(dbUpdateResponseObject);
+
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
+               
 
             }catch(e){
 
-                console.log(e)
-                reject(dbUpdateResponseObject)
+                console.log(e);
+                reject(dbUpdateResponseObject);
             }
 
         })
@@ -291,93 +319,153 @@ class UserDetailsDatabase extends vpModel {
                     return
                 }
 
-                const updateLoggedInSqlStatement = `
+                try{
 
-                UPDATE user_details
-                SET last_logged_in = ?
-                WHERE username = ?;
-                `
+                    dbResponseObject.mysqlConnection?.beginTransaction(err =>{throw err});
 
-                const updateResult = await dbResponseObject.mysqlConnection.query(
-                    updateLoggedInSqlStatement,
-                    [
-                        sqlFormattedDate,
-                        username
-                    ]
-                );
+                    try{
+                        const updateLoggedInSqlStatement = `
 
-                dbUpdateResponseObject.responseMessage = "Update successful"
-                
-                resolve(dbUpdateResponseObject);
+                        UPDATE user_details
+                        SET last_logged_in = ?
+                        WHERE username = ?
+                        ;
+                        `
+
+                        const [updateResultUsername]  = await dbResponseObject.mysqlConnection.query(
+                            updateLoggedInSqlStatement,
+                            [
+                                sqlFormattedDate,
+                                username
+                            ]
+                        );
+
+                        console.log(updateResultUsername, "update result by user")
+
+                        if(updateResultUsername.affectedRows === 0){
+                            throw false
+                        } else if (updateResultUsername.affectedRows === 1){
+                            dbUpdateResponseObject.responseMessage = "Update successful"
+                            resolve(dbUpdateResponseObject);
+                        };
+
+                    }catch(e){
+
+                        //Get user_id from email first
+                        const userDB = await super.getUsersDBConnection();
+
+                        const userIdSqlStatement = `
+                            SELECT id
+                            FROM users
+                            WHERE email = ?
+                            ;
+                        `
+
+                        const [idRow] = await userDB.mysqlConnection.query(
+                            userIdSqlStatement,
+                            username
+                        );
+
+                        console.log(idRow, "id row")
+
+                        const id = idRow[0].id; 
+                        const updateLoggedInSqlStatement = `
+
+                        UPDATE user_details
+                        SET last_logged_in = ?
+                        WHERE user_id= ?
+                        ;
+                        `
+
+                        const [updateResultUsername]  = await dbResponseObject.mysqlConnection.query(
+                            updateLoggedInSqlStatement,
+                            [
+                                sqlFormattedDate,
+                                id
+                            ]
+                        );
+
+                        dbUpdateResponseObject.responseMessage = "Update successful"
+                    
+                        resolve(dbUpdateResponseObject);
+                    } finally {
+                        dbResponseObject.mysqlConnection?.commit(e=>{throw e});                        
+                    }
+
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                };
 
             }catch(e){
-
-                console.log(e)
-                reject(dbUpdateResponseObject)
+                console.log(e);
+                reject(dbUpdateResponseObject);
             }
 
         })
     }
 
     //Check translations left
-
     static checkTranslationsLeft(username: string): Promise<boolean>{
         return new Promise(async (resolve, reject)=>{
 
-
             try{
-
-
                 //get user id 
-
                 const {matchMessage} = await super.getUserId(username);
                 
                 const userId = matchMessage;
 
                 //Get db connection
-
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
                 
                 if(dbConnectionObject.responseMessage === "Connection unsuccessful"){
                     throw "Cannot connect"
                 }
 
-                //SQL query
+                try{
+                    //SQL query
 
-                const checkTranslationsSqlQuery = `
+                    const checkTranslationsSqlQuery = `
                     SELECT * FROM translation_left 
                     WHERE user_id = ?;
                 `
 
-                await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
 
-                const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
-                    checkTranslationsSqlQuery,
-                    userId
-                )
+                    const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
+                        checkTranslationsSqlQuery,
+                        userId
+                    )
 
-                if(queryResult.length === 0){
+                    if(queryResult.length === 0){
 
-                    throw "error, no user data"
-                
-                } else if (queryResult.length > 0){
+                        throw "error, no user data"
+                    
+                    } else if (queryResult.length > 0){
 
-                    const translationsLeft = queryResult[0].translations_left;
+                        const translationsLeft = queryResult[0].translations_left;
 
-                    if(translationsLeft > 0){
-                        resolve(true)
-                    } else if (translationsLeft === 0){
-                        throw `No translations left`
-                    }
+                        if(translationsLeft > 0){
+                            resolve(true)
+                        } else if (translationsLeft === 0){
+                            throw `No translations left`
+                        }
 
-                }
+                    } 
+
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbConnectionObject.mysqlConnection);
+                };
 
             }catch(e){
 
                 reject(e)
             }
-
-
         })
     }
 
@@ -389,190 +477,192 @@ class UserDetailsDatabase extends vpModel {
             try{
 
                 //get user id 
-
                 const {matchMessage} = await super.getUserId(username);
                 
                 const userId = matchMessage;
 
                 //Get db connection
-
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
                 
                 if(dbConnectionObject.responseMessage === "Connection unsuccessful"){
                     throw "Cannot connect"
                 }
 
-                //SQL query to get translatoins left
+                try{
+                    //SQL query to get translatoins left
 
-                const checkTranslationsSqlQuery = `
-                    SELECT * FROM translation_left 
-                    WHERE user_id = ?;
-                `
+                        const checkTranslationsSqlQuery = `
+                        SELECT * FROM translation_left 
+                        WHERE user_id = ?;
+                    `
 
-                //query to check if premium
+                    //query to check if premium
+                    const checkPremiumStatus = `SELECT *  FROM user_details WHERE user_id = ?;`
 
-                const checkPremiumStatus = `SELECT *  FROM user_details WHERE user_id = ?;`
+                    await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
 
-                await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
+                        checkTranslationsSqlQuery,
+                        userId
+                    )
 
-                const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
-                    checkTranslationsSqlQuery,
-                    userId
-                )
+                    const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(
+                        checkPremiumStatus,
+                        userId
+                    )
 
-                const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(
-                    checkPremiumStatus,
-                    userId
-                )
+                    if(premiumQueryResult[0].premium){
+                        //If user is premium user...
 
-                if(premiumQueryResult[0].premium){
-                    //If user is premium user...
+                        if(queryResult[0].translations_left === 120 ){
 
-                    if(queryResult[0].translations_left === 120 ){
+                            const newTranslationsLeft = queryResult[0].translations_left - 1;
 
-                        const newTranslationsLeft = queryResult[0].translations_left - 1;
-    
-                        const updateTranslationsQuery = `
-                            UPDATE translation_left
-                            SET translations_left = ? 
-                            WHERE user_id = ?
-                            ;
-                        `
-    
-                        await dbConnectionObject.mysqlConnection?.query(
-                            updateTranslationsQuery,
-                            [
-                                newTranslationsLeft,
-                                userId
-                            ]
-                        );
+                            const updateTranslationsQuery = `
+                                UPDATE translation_left
+                                SET translations_left = ? 
+                                WHERE user_id = ?
+                                ;
+                            `
 
-                        //Set timer on translations left
-                        const setTimerSqlQuery = `
-                            UPDATE next_translations_refresh 
-                            SET translations_refresh = ?
-                            WHERE user_id = ?
-                            ;
-                        `
-                        const refreshEndTime = super.getTranslationRefreshEndTime();
+                            await dbConnectionObject.mysqlConnection?.query(
+                                updateTranslationsQuery,
+                                [
+                                    newTranslationsLeft,
+                                    userId
+                                ]
+                            );
+
+                            //Set timer on translations left
+                            const setTimerSqlQuery = `
+                                UPDATE next_translations_refresh 
+                                SET translations_refresh = ?
+                                WHERE user_id = ?
+                                ;
+                            `
+                            const refreshEndTime = super.getTranslationRefreshEndTime();
+
+                            
+                            await dbConnectionObject.mysqlConnection?.query(
+                                setTimerSqlQuery,
+                                [
+                                    refreshEndTime,
+                                    userId
+                                ]
+                            );
+
+
+                            await dbConnectionObject.mysqlConnection?.commit();
+
+                            resolve(newTranslationsLeft)
+                        
+                        } else if (queryResult[0].translations_left > 0){
+
+                            const newTranslationsLeft = queryResult[0].translations_left - 1;
+
+                            const updateTranslationsQuery = `
+                                UPDATE translation_left
+                                SET translations_left = ? 
+                                WHERE user_id = ?
+                                ;
+                            `
+
+                            await dbConnectionObject.mysqlConnection?.query(
+                                updateTranslationsQuery,
+                                [
+                                    newTranslationsLeft,
+                                    userId
+                                ]
+                            );
+                            await dbConnectionObject.mysqlConnection?.commit();
+
+                            resolve(newTranslationsLeft)
+
+                        } else if (queryResult[0].translations_left === 0){
+                            throw "No more translations allowed"
+                        }
 
                         
-                        await dbConnectionObject.mysqlConnection?.query(
-                            setTimerSqlQuery,
-                            [
-                                refreshEndTime,
-                                userId
-                            ]
-                        );
 
+                    }else if (!premiumQueryResult[0].premium){
 
-                        await dbConnectionObject.mysqlConnection?.commit();
-    
-                        resolve(newTranslationsLeft)
-                    
-                    } else if (queryResult[0].translations_left > 0){
+                        //If user is not premium...
 
-                        const newTranslationsLeft = queryResult[0].translations_left - 1;
-    
-                        const updateTranslationsQuery = `
-                            UPDATE translation_left
-                            SET translations_left = ? 
-                            WHERE user_id = ?
-                            ;
-                        `
-    
-                        await dbConnectionObject.mysqlConnection?.query(
-                            updateTranslationsQuery,
-                            [
-                                newTranslationsLeft,
-                                userId
-                            ]
-                        );
-                        await dbConnectionObject.mysqlConnection?.commit();
-    
-                        resolve(newTranslationsLeft)
+                        if(queryResult[0].translations_left === 40){
 
-                    } else if (queryResult[0].translations_left === 0){
+                            const newTranslationsLeft = queryResult[0].translations_left - 1;
 
-                        await dbConnectionObject.mysqlConnection?.commit();
-                        throw "No more translations allowed"
-                    }
-    
-                    
+                            const updateTranslationsQuery = `
+                                UPDATE translation_left
+                                SET translations_left = ? 
+                                WHERE user_id = ?
+                                ;
+                            `
 
-                }else if (!premiumQueryResult[0].premium){
+                            await dbConnectionObject.mysqlConnection?.query(
+                                updateTranslationsQuery,
+                                [
+                                    newTranslationsLeft,
+                                    userId
+                                ]
+                            );
 
-                    //If user is not premium...
+                            //Set timer on translations left
+                            const setTimerSqlQuery = `
+                                UPDATE next_translations_refresh 
+                                SET translations_refresh = ?
+                                WHERE user_id = ?
+                                ;
+                            `
+                            const refreshEndTime = super.getTranslationRefreshEndTime();
 
-                    if(queryResult[0].translations_left === 40){
+                            
+                            await dbConnectionObject.mysqlConnection?.query(
+                                setTimerSqlQuery,
+                                [
+                                    refreshEndTime,
+                                    userId
+                                ]
+                            );
 
-                        const newTranslationsLeft = queryResult[0].translations_left - 1;
-    
-                        const updateTranslationsQuery = `
-                            UPDATE translation_left
-                            SET translations_left = ? 
-                            WHERE user_id = ?
-                            ;
-                        `
-    
-                        await dbConnectionObject.mysqlConnection?.query(
-                            updateTranslationsQuery,
-                            [
-                                newTranslationsLeft,
-                                userId
-                            ]
-                        );
+                            await dbConnectionObject.mysqlConnection?.commit();
 
-                        //Set timer on translations left
-                        const setTimerSqlQuery = `
-                            UPDATE next_translations_refresh 
-                            SET translations_refresh = ?
-                            WHERE user_id = ?
-                            ;
-                        `
-                        const refreshEndTime = super.getTranslationRefreshEndTime();
-
+                            resolve(newTranslationsLeft)
                         
-                        await dbConnectionObject.mysqlConnection?.query(
-                            setTimerSqlQuery,
-                            [
-                                refreshEndTime,
-                                userId
-                            ]
-                        );
+                        } else if (queryResult[0].translations_left > 0){
 
-                        await dbConnectionObject.mysqlConnection?.commit();
-    
-                        resolve(newTranslationsLeft)
-                    
-                    } else if (queryResult[0].translations_left > 0){
+                            const newTranslationsLeft = queryResult[0].translations_left - 1;
 
-                        const newTranslationsLeft = queryResult[0].translations_left - 1;
-    
-                        const updateTranslationsQuery = `
-                            UPDATE translation_left
-                            SET translations_left = ? 
-                            WHERE user_id = ?
-                            ;
-                        `
-    
-                        await dbConnectionObject.mysqlConnection?.query(
-                            updateTranslationsQuery,
-                            [
-                                newTranslationsLeft,
-                                userId
-                            ]
-                        );
-                        await dbConnectionObject.mysqlConnection?.commit();
-    
-                        resolve(newTranslationsLeft)
+                            const updateTranslationsQuery = `
+                                UPDATE translation_left
+                                SET translations_left = ? 
+                                WHERE user_id = ?
+                                ;
+                            `
 
-                    } else if (queryResult[0].translations_left === 0){
+                            await dbConnectionObject.mysqlConnection?.query(
+                                updateTranslationsQuery,
+                                [
+                                    newTranslationsLeft,
+                                    userId
+                                ]
+                            );
+                            await dbConnectionObject.mysqlConnection?.commit();
 
-                        await dbConnectionObject.mysqlConnection?.commit();
-                        throw "No more translations allowed"
+                            resolve(newTranslationsLeft)
+
+                        } else if (queryResult[0].translations_left === 0){
+                            throw "No more translations allowed"
+                        }
                     }
+
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbConnectionObject.mysqlConnection);
                 }
+            
             }catch(e){
                 reject(e)
             }

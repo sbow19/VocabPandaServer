@@ -9,8 +9,10 @@ require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const cron_1 = __importDefault(require("@shared/updates/cron"));
 const express = require('express');
+const cors = require('cors');
 //PATH TO SSL CERTIFICATE AND KEY HERE 
 const vocabpandaserver = express();
+vocabpandaserver.use(cors());
 const PORT = 3000 || process.env.PORT;
 //SET CHECKING INTERVALS - CRON JOBS
 cron_1.default.runCronJobs();
@@ -18,20 +20,22 @@ vocabpandaserver.use(express.json());
 //Generate device api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {
     try {
+        console.log(req);
         //Get database connection
-        const dbConnection = await users_db_1.default.getUsersDBConnection();
+        const dbConnection = await users_db_1.default.getUsersDBConnection(); //Implement some kind of db pooling under the hood
         dbConnection.mysqlConnection?.beginTransaction(err => { throw err; });
         const deviceId = req.body.deviceId;
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`;
         const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
-        console.log(queryResult);
         if (queryResult.length === 0) {
             //new API key
             const newAPIKey = uuid.v4();
-            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?);`; //api_key, device_id, user_id
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?, ?, ?);`; //api_key, device_id, user_id, public_key, private_key
             await dbConnection.mysqlConnection?.query(addNewDeviceSqlQuery, [
                 newAPIKey,
                 deviceId,
+                null,
+                null,
                 null
             ]);
             dbConnection.mysqlConnection?.commit();

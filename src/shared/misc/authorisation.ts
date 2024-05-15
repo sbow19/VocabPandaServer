@@ -5,8 +5,9 @@ const authoriseRequest = async(req, res, next)=>{
 
     try{
 
+        console.log(req)
+
         const credentials = basicAuth(req);
-        console.log(credentials)
 
         if (!credentials || !credentials.name || !credentials.pass) {
             res.status(401).send('Authentication required');

@@ -107,8 +107,6 @@ AccountRouter.post("/createaccount", async(req, res)=>{
         APIResponseObject.responseMessage = "Add successful";
         APIResponseObject.userId = dbAddUserResponseObject.addMessage;
 
-        console.log(APIResponseObject);
-
         res.status(200).send(APIResponseObject);
     
     } catch(e){
@@ -118,7 +116,29 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 
         //Error object sent to front end 
         res.status(200).send(APIResponseObject);
-    }
+
+        if(e.message === "nodemail"){
+
+            console.log("error message here")
+
+            //If nodemail fails to send a response, then we delete the user just crated
+
+            try{
+                const deleteResponseObject = await UsersDatabase.deleteUser({
+                    username: userCreds.username,
+                    password: req.body.password,
+                    identifierType: "username"
+                });
+
+                console.log(deleteResponseObject)
+
+            }catch(e){
+                console.log(e)
+            }
+            
+        }
+        
+    } 
     
 });
 

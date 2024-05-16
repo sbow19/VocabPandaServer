@@ -235,13 +235,19 @@ deleteType: "project" | "entry" | "tag"
 
     }
 
-    export type NewEntryDetails = {
-        target_language_text: string
-        target_language: string
-        output_language_text: string
-        output_language: string
-        tags: [] //list of tagids
+    export type EntryDetails = {
+        targetLanguageText: string
+        targetLanguage: string
+        outputLanguageText: string
+        outputLanguage: string
         project: string
+        createdAt: string
+        updatedAt:  string
+        tags: number
+        tagsArray: string[]
+        userId: string
+        username: string
+        entryId: string
     }
 
     export type refreshErrorResponse ={
@@ -258,6 +264,17 @@ deleteType: "project" | "entry" | "tag"
         responseMessage: "Check complete" | "Check unsuccessful"
         info: string
         errorMessage?: Error | null
+    }
+
+
+    //REVISED & SIMPLIFIED TYPES
+
+    export type APIEntryResponse = {
+        success: Boolean
+        message: "no internet" | "operation successful" | "misc error" | "operation unsuccessful"
+        error?: Error
+        operationType: "create" | "update" | "remove" | ""
+        contentType : "project" | "tags" | "entry" | "user"
     }
 
 

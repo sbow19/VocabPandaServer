@@ -46,26 +46,28 @@ usersContentRouter.post("/addentry", async(req, res)=>{
 
     try{
 
+        const APIEntryObject: appTypes.EntryDetails = req.body
+
         const addEntryResponse = await UsersContentDatabase.addNewEntry(
-            req.body.newEntryDetails,
-            req.body.userName
+            APIEntryObject
         );
 
         res.status(200).send(addEntryResponse);
 
-    }catch(e){
-        res.send(e);
+    }catch(addEntryResponse){
+        res.status(500).send(addEntryResponse);
     }
 
 })
 
-usersContentRouter.put("/updateentry", async(req, res)=>{
+usersContentRouter.post("/updateentry", async(req, res)=>{
 
     try{
 
+        const EntryObject: appTypes.EntryDetails = req.body
+
         const updateEntryResponse = await UsersContentDatabase.updateEntry(
-            req.body.updateDetails,
-            req.body.entryId
+            EntryObject
         );
 
         res.status(200).send(updateEntryResponse);
@@ -77,7 +79,7 @@ usersContentRouter.put("/updateentry", async(req, res)=>{
 })
 
 
-usersContentRouter.delete("/deleteentry", async(req, res)=>{
+usersContentRouter.post("/deleteentry", async(req, res)=>{
 
     try{
 
@@ -110,7 +112,7 @@ usersContentRouter.post("/addtag", async(req, res)=>{
 
 })
 
-usersContentRouter.delete("/deletetag", async(req, res)=>{
+usersContentRouter.post("/deletetag", async(req, res)=>{
 
     try{
 

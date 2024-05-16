@@ -285,8 +285,9 @@ class UsersDatabase extends models_template_1.default {
                     //Get user details ( Note that usernames are uqniue in the database )
                     let userMatchQuery = `SELECT * FROM users 
                     WHERE ${userCredentials.identifierType} = ?
+                    ;
                     `;
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.username);
                     if (databaseResult.length === 0) {
                         //If there is a negative result, then the email or username does not exist.
                         dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
@@ -309,7 +310,7 @@ class UsersDatabase extends models_template_1.default {
                     const deleteUserSqlQuery = `DELETE FROM users 
                     WHERE username = ?
                     ;`;
-                    await connectionResponseObject.mysqlConnection?.query(deleteUserSqlQuery, userCredentials.userName, err => {
+                    await connectionResponseObject.mysqlConnection?.query(deleteUserSqlQuery, userCredentials.username, err => {
                         throw err;
                     });
                     connectionResponseObject.mysqlConnection?.commit();
@@ -330,7 +331,7 @@ class UsersDatabase extends models_template_1.default {
                 //If there is some error...
                 dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
                 dbDeleteUserResponseObject.deleteMessage = e;
-                resolve(dbDeleteUserResponseObject);
+                reject(dbDeleteUserResponseObject);
                 return;
             }
         });

@@ -74,7 +74,6 @@ AccountRouter.post("/createaccount", async (req, res) => {
         APIResponseObject.addMessage = "User added successfully!";
         APIResponseObject.responseMessage = "Add successful";
         APIResponseObject.userId = dbAddUserResponseObject.addMessage;
-        console.log(APIResponseObject);
         res.status(200).send(APIResponseObject);
     }
     catch (e) {
@@ -82,6 +81,21 @@ AccountRouter.post("/createaccount", async (req, res) => {
         APIResponseObject.responseMessage = "Add unsuccessful";
         //Error object sent to front end 
         res.status(200).send(APIResponseObject);
+        if (e.message === "nodemail") {
+            console.log("error message here");
+            //If nodemail fails to send a response, then we delete the user just crated
+            try {
+                const deleteResponseObject = await users_db_1.default.deleteUser({
+                    username: userCreds.username,
+                    password: req.body.password,
+                    identifierType: "username"
+                });
+                console.log(deleteResponseObject);
+            }
+            catch (e) {
+                console.log(e);
+            }
+        }
     }
 });
 //TODO trigger payment cancellation logic here

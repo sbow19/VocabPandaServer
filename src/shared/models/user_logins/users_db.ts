@@ -420,9 +420,10 @@ class UsersDatabase extends vpModel {
 
                     `SELECT * FROM users 
                     WHERE ${userCredentials.identifierType} = ?
+                    ;
                     `
                     
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.username);
                     
 
                     if (databaseResult.length === 0){
@@ -455,13 +456,12 @@ class UsersDatabase extends vpModel {
                     ;` 
                     
                     await connectionResponseObject.mysqlConnection?.query(
-                        deleteUserSqlQuery, userCredentials.userName, err=>{
+                        deleteUserSqlQuery, userCredentials.username, err=>{
                             throw err
                     });
 
                     connectionResponseObject.mysqlConnection?.commit();
 
-                    
             
 
                     dbDeleteUserResponseObject.responseMessage = "User successfully deleted";
@@ -484,7 +484,7 @@ class UsersDatabase extends vpModel {
                 //If there is some error...
                 dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
                 dbDeleteUserResponseObject.deleteMessage = e
-                resolve(dbDeleteUserResponseObject);
+                reject(dbDeleteUserResponseObject);
                 return
             }
         })

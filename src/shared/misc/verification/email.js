@@ -29,14 +29,14 @@ class VocabPandaEmail {
                     subject: "Testing nodemail",
                     text: `Click on this link to verify your email: http://192.168.1.254:3000/account/createaccount/verify?token=${token}`, //Replace with IP of VPS 
                 });
-                console.log(result);
                 //save token in database if email successfully sent, otherwise we skip.
                 await users_db_1.default.saveEmailVerification(token, email);
                 resolve(console.log("Message sent: " + result.messageId));
             }
             catch (e) {
+                const mailSendError = new Error("nodemail", {});
                 console.log(e, "Error with nodemail connection");
-                reject(e);
+                reject(mailSendError);
             }
         });
     }

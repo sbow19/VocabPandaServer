@@ -46,8 +46,13 @@ class VocabPandaEmail {
 
             }catch(e){
 
+
+                const mailSendError = new Error("nodemail", {
+                    
+
+                })
                 console.log(e, "Error with nodemail connection");
-                reject(e)
+                reject(mailSendError)
             }
         })
     }

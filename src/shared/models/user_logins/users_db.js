@@ -3,44 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const mysql = require("mysql2/promise");
-const { v4: uuidv4 } = require('uuid');
 const models_template_1 = __importDefault(require("@shared/models/models_template"));
+const prepared_statements_1 = __importDefault(require("../prepared_statements"));
 const bcrypt = require('bcrypt');
 const basicAuth = require("basic-auth");
 const UserDBPool = require("./users_db_pool");
 class UsersDatabase extends models_template_1.default {
-    static #checkDB(dbSearchObject) {
-        const matchResponseObject = {
-            matchMessage: "",
-            responseCode: 0,
-            responseMessage: "No match found",
-            matchType: ""
-        };
-        const matchSearchArray = dbSearchObject.matchTerms;
-        return new Promise(async (resolve, reject) => {
-            try {
-                //Cycle through match search array to find a match
-                for (let termObject of matchSearchArray) {
-                    let matchQuery = `SELECT * FROM ${dbSearchObject.table} 
-                    WHERE ${termObject.column} = ?
-                    `;
-                    const [databaseResult] = await dbSearchObject.mysqlConnection.query(matchQuery, termObject.term);
-                    if (databaseResult.length > 0) {
-                        //If the database returns a result, then the email or password exists.
-                        matchResponseObject.responseMessage = "Match found";
-                        reject(matchResponseObject);
-                        return;
-                    }
-                }
-                //if none of the terms (email and password) match an entry in the database, then the user does not exist
-                resolve(matchResponseObject);
-            }
-            catch (e) {
-                reject(e);
-            }
-        });
-    }
     static checkCredentials(userCredentials) {
         //Checks API key to esnure that connecting device has api key generated on app download.
         return new Promise(async (resolve, reject) => {
@@ -161,90 +129,80 @@ class UsersDatabase extends models_template_1.default {
             }
         });
     }
+    //Check for existsing users
+    static #checkForUsers(dbConnection, userCredentials) {
+        return new Promise(async (resolve, reject) => {
+            const matchResponse = {
+                match: false
+            };
+            try {
+                const [userDatabaseResult] = await dbConnection.query(prepared_statements_1.default.generalStatements.usersUsernameMatch, userCredentials.username);
+                const [emailDatabaseResult] = await dbConnection.query(prepared_statements_1.default.generalStatements.usersEmailMatch, userCredentials.email);
+                if (userDatabaseResult.length === 0 && emailDatabaseResult.length === 0) {
+                    //If there is a negative result, then the email or username does not exist.
+                    matchResponse.match = false;
+                    resolve(matchResponse);
+                }
+                else if (userDatabaseResult.length > 0) {
+                    //if there is a positive match, then the user exists, so we resolve the match object
+                    matchResponse.match = true;
+                    matchResponse.matchTerm = userDatabaseResult;
+                    resolve(matchResponse);
+                }
+                else if (emailDatabaseResult.length > 0) {
+                    //if there is a positive match, then the user exists, so we resolve the match object
+                    matchResponse.match = true;
+                    matchResponse.matchTerm = emailDatabaseResult;
+                    resolve(matchResponse);
+                }
+            }
+            catch (e) {
+                matchResponse.error = e;
+                reject(e);
+            }
+        });
+    }
     //Create new user + connection and match attempt
-    static createNewUser(userCredentials) {
+    static createNewUser(userCredentials, deviceCredentials) {
         //Attempt to get db connection
         return new Promise(async (resolve, reject) => {
-            const dbAddUserResponseObject = {
-                responseCode: 0,
-                responseMessage: "New user added",
-                addMessage: ""
-            };
-            //Configure search array
-            const usernameSearchObject = {
-                term: userCredentials?.username,
-                column: "username"
-            };
-            const emailSearchObject = {
-                term: userCredentials?.email,
-                column: "email"
+            const createUserResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "create account"
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    reject(dbAddUserResponseObject);
-                    return;
-                }
                 try {
-                    const checkEmailResponse = await this.#checkDB({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", matchTerms: [emailSearchObject] });
-                    const checkUsernameResponse = await this.#checkDB({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "users", matchTerms: [usernameSearchObject] });
-                    const checkVerificationResponse = await this.#checkDB({ mysqlConnection: connectionResponseObject.mysqlConnection, table: "verification", matchTerms: [emailSearchObject] });
-                    if (checkUsernameResponse.responseMessage === "No match found" && checkVerificationResponse.responseMessage === "No match found" &&
-                        checkEmailResponse.responseMessage === "No match found") {
-                        //IF no match found in checking for users
-                        //New user id
-                        const newUserId = super.generateUUID();
-                        connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                        //Password hash
-                        const addUserSqlQuery = `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT, 0);`; //id, username, email, password_hash, verified
-                        await connectionResponseObject.mysqlConnection?.query(addUserSqlQuery, [
-                            newUserId,
-                            userCredentials.username,
-                            userCredentials.email,
-                            userCredentials.password
-                        ]);
-                        //Connect new user id to device id
-                        const addUserDevice = `UPDATE api_keys 
-                    SET user_id = ? 
-                    WHERE
-                        api_key = ?
-                    AND
-                        device_id = ? 
-                    `;
-                        await connectionResponseObject.mysqlConnection?.query(addUserDevice, [
-                            newUserId,
-                            userCredentials.apiKey,
-                            userCredentials.deviceId
-                        ]);
-                        connectionResponseObject.mysqlConnection?.commit();
-                        dbAddUserResponseObject.responseMessage = "New user added";
-                        dbAddUserResponseObject.responseCode = 0;
-                        dbAddUserResponseObject.addMessage = newUserId; //Send the user id back to add new details
-                        resolve(dbAddUserResponseObject);
-                        return;
+                    //Check for user details, if no match then
+                    const matchMessage = await this.#checkForUsers(connectionResponseObject.mysqlConnection, userCredentials);
+                    //If match then we reject the promise
+                    if (matchMessage.match) {
+                        throw matchMessage;
                     }
-                    else if (checkEmailResponse.responseMessage === "Match found" &&
-                        checkVerificationResponse.responseMessage === "Match found") {
-                        dbAddUserResponseObject.responseMessage = "New user could not be added";
-                        dbAddUserResponseObject.addMessage = "Email already exists. Verification required.";
-                        resolve(dbAddUserResponseObject);
-                        return;
-                    }
-                    else if (checkEmailResponse.responseMessage === "Match found" &&
-                        checkVerificationResponse.responseMessage === "No match found") {
-                        dbAddUserResponseObject.responseMessage = "New user could not be added";
-                        dbAddUserResponseObject.addMessage = "Email already exists.";
-                        resolve(dbAddUserResponseObject);
-                        return;
-                    }
-                    else if (checkUsernameResponse.responseMessage === "Match found") {
-                        dbAddUserResponseObject.responseMessage = "New user could not be added";
-                        dbAddUserResponseObject.addMessage = "Username already exists.";
-                        resolve(dbAddUserResponseObject);
-                        return;
-                    }
+                    //New user id
+                    const newUserId = super.generateUUID();
+                    connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    //Password hash
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addAccount, [
+                        newUserId,
+                        userCredentials.username,
+                        userCredentials.email,
+                        userCredentials.password
+                    ]);
+                    //Connect new user id to device id 
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.connectUserDeviceToAccount, [
+                        newUserId,
+                        deviceCredentials.pass,
+                        deviceCredentials.name
+                    ]);
+                    connectionResponseObject.mysqlConnection?.commit();
+                    createUserResponse.success = true;
+                    createUserResponse.message = "operation successful";
+                    createUserResponse.userId = newUserId; //Send the user id back to add new details
+                    resolve(createUserResponse);
                 }
                 catch (e) {
                     throw e;
@@ -256,134 +214,97 @@ class UsersDatabase extends models_template_1.default {
             }
             catch (e) {
                 console.log(e);
-                //If there is some error...
-                dbAddUserResponseObject.responseMessage = "New user could not be added";
-                dbAddUserResponseObject.addMessage = e;
-                reject(dbAddUserResponseObject);
-                return;
+                if (e.match === "match") {
+                    createUserResponse.customResponse = "user exists";
+                    reject(createUserResponse);
+                }
+                else {
+                    //If there is some error...
+                    createUserResponse.error = e;
+                    reject(createUserResponse);
+                }
             }
         });
     }
     //Delete user
     static deleteUser(userCredentials) {
         return new Promise(async (resolve, reject) => {
-            const dbDeleteUserResponseObject = {
-                responseCode: 0,
-                responseMessage: "User could not be deleted",
-                deleteMessage: ""
+            const deleteUserResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "remove",
+                contentType: "account",
+                accountOperation: "delete account"
             };
             try {
-                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                    reject(dbDeleteUserResponseObject);
-                    return;
-                }
+                const dbConnection = await super.getUsersDBConnection(); //Get connection to user_logins table
                 try {
-                    connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                    //Get user details ( Note that usernames are uqniue in the database )
-                    let userMatchQuery = `SELECT * FROM users 
-                    WHERE ${userCredentials.identifierType} = ?
-                    ;
-                    `;
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.username);
-                    if (databaseResult.length === 0) {
-                        //If there is a negative result, then the email or username does not exist.
-                        dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                        dbDeleteUserResponseObject.deleteMessage = "Username or password does not match";
-                        reject(dbDeleteUserResponseObject);
+                    dbConnection.mysqlConnection?.beginTransaction(err => { throw err; });
+                    const [databaseResult] = await dbConnection.mysqlConnection?.query(prepared_statements_1.default.generalStatements.userIdMatch, [userCredentials.userId, userCredentials.userId]);
+                    if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
+                        //match successful Leave empty, continue
                     }
-                    else if (databaseResult.length > 0) {
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
-                            //match successful Leave empty, continue
-                        }
-                        else {
-                            dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                            dbDeleteUserResponseObject.deleteMessage = "Username or password does not match";
-                            reject(dbDeleteUserResponseObject);
-                            return;
-                        }
+                    else {
+                        throw deleteUserResponse;
                     }
-                    //IF match found in checking for users, then account can be deleted.
-                    const deleteUserSqlQuery = `DELETE FROM users 
-                    WHERE username = ?
-                    ;`;
-                    await connectionResponseObject.mysqlConnection?.query(deleteUserSqlQuery, userCredentials.username, err => {
-                        throw err;
-                    });
-                    connectionResponseObject.mysqlConnection?.commit();
-                    dbDeleteUserResponseObject.responseMessage = "User successfully deleted";
-                    dbDeleteUserResponseObject.responseCode = 0;
-                    resolve(dbDeleteUserResponseObject);
+                    //IF match found in checking for users, then account can be deleted. 
+                    await dbConnection.mysqlConnection?.query(prepared_statements_1.default.accountStatements.deleteAccount, [
+                        userCredentials.userId,
+                        userCredentials.userId
+                    ]);
+                    dbConnection.mysqlConnection?.commit();
+                    deleteUserResponse.message = "operation successful";
+                    deleteUserResponse.success = true;
+                    resolve(deleteUserResponse);
                 }
                 catch (e) {
                     throw e;
                 }
                 finally {
                     //Release 
-                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                    UserDBPool.releaseConnection(dbConnection.mysqlConnection);
                 }
             }
             catch (e) {
                 console.log(e);
                 //If there is some error...
-                dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                dbDeleteUserResponseObject.deleteMessage = e;
-                reject(dbDeleteUserResponseObject);
-                return;
+                deleteUserResponse.error = e;
+                reject(deleteUserResponse);
             }
         });
     }
     ;
     //Update password
-    static updatePassword(userCredentials, newPassword) {
+    static updatePassword(accountObject) {
         return new Promise(async (resolve, reject) => {
-            const dbUpdatePasswordResponseObject = {
-                responseCode: 0,
-                responseMessage: "Password could not be updated",
-                updateMessage: ""
+            const updatePasswordResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "update",
+                contentType: "account",
+                accountOperation: "change password"
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    resolve(dbUpdatePasswordResponseObject);
-                    return;
-                }
                 try {
-                    //Get user details ( Note that usernames are uqniue in the database )
-                    let userMatchQuery = `SELECT * FROM users 
-                    WHERE ${userCredentials.identifierType} = ?
-                    `;
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
-                    if (databaseResult.length === 0) {
-                        //If there is a negative result, then the email or username does not exist.
-                        dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated";
-                        dbUpdatePasswordResponseObject.updateMessage = "Username or password does not match";
-                        reject(dbUpdatePasswordResponseObject);
+                    connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.generalStatements.userIdMatch, accountObject.userId);
+                    //if there is a positive match, then the user exists, we will then check the hash    
+                    if (await bcrypt.compare(accountObject.oldPassword, databaseResult[0].password_hash)) {
+                        //match successful Leave empty, continue
                     }
-                    else if (databaseResult.length > 0) {
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        if (await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)) {
-                            //match successful Leave empty, continue
-                        }
-                        else {
-                            dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated";
-                            dbUpdatePasswordResponseObject.deleteMessage = "Username or password does not match";
-                            reject(dbUpdatePasswordResponseObject);
-                        }
+                    else {
+                        reject(updatePasswordResponse);
+                        return;
                     }
-                    //IF match found in checking for users, then account can be updated.
-                    const updatePasswordSqlQuery = `UPDATE users 
-                    SET password_hash = ?
-                    WHERE username = ?
-                    ;`;
+                    //Generate new hashed password
+                    const salt = await bcrypt.genSalt();
+                    const hashedPassword = await bcrypt.hash(accountObject.newPassword, salt);
                     //new password_hash, username
-                    const updatePasswordResult = await connectionResponseObject.mysqlConnection.query(updatePasswordSqlQuery, [newPassword, userCredentials.userName]);
-                    dbUpdatePasswordResponseObject.responseMessage = "Password updated successfully";
-                    resolve(dbUpdatePasswordResponseObject);
+                    await connectionResponseObject.mysqlConnection.query(prepared_statements_1.default.accountStatements.updatePassword, [hashedPassword, accountObject.userId]);
+                    updatePasswordResponse.message = "operation successful";
+                    updatePasswordResponse.success = true;
+                    resolve(updatePasswordResponse);
                 }
                 catch (e) {
                     throw e;
@@ -396,42 +317,35 @@ class UsersDatabase extends models_template_1.default {
             catch (e) {
                 console.log(e);
                 //If there is some error...
-                dbUpdatePasswordResponseObject.updateMessage = "User password could not be deleted";
-                dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated";
-                resolve(dbUpdatePasswordResponseObject);
+                updatePasswordResponse.error = e;
+                reject(updatePasswordResponse);
             }
         });
     }
     //Save email verification token
     static saveEmailVerification(token, email) {
         return new Promise(async (resolve, reject) => {
-            const dbAddResponseObject = {
-                responseCode: 0,
-                responseMessage: "Add unsuccessful",
-                addMessage: "",
-                addType: "entry"
+            const addEmailTokenResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "create account"
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    resolve(dbAddResponseObject);
-                    return;
-                }
-                ;
                 try {
                     //Get token expiry (1 hour);
                     const tokenExpiry = super.getTokenExpiry();
                     //Save token, email, and token expiry
-                    const saveVerificationQuery = `INSERT INTO verification VALUES (?, ?, ?);`; //email, token, token_expiry
-                    await connectionResponseObject.mysqlConnection?.query(saveVerificationQuery, [
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addEmailVerificationToken, [
                         email,
                         token,
                         tokenExpiry
                     ]);
-                    dbAddResponseObject.addMessage = "Token saved successfully";
-                    dbAddResponseObject.responseMessage = "Add successful";
-                    resolve(dbAddResponseObject);
+                    addEmailTokenResponse.success = true;
+                    addEmailTokenResponse.message = "operation successful";
+                    resolve(addEmailTokenResponse);
                 }
                 catch (e) {
                     throw e;
@@ -445,48 +359,34 @@ class UsersDatabase extends models_template_1.default {
                 console.log(e);
                 console.log(console.trace());
                 //If there is some error...
-                dbAddResponseObject.addMessage = "Token could not be saved";
-                dbAddResponseObject.responseMessage = "Add unsuccessful";
-                reject(dbAddResponseObject);
+                addEmailTokenResponse.error = e;
+                reject(addEmailTokenResponse);
             }
         });
     }
     //Check email verification time
-    static checkEmailVerification(token) {
+    static checkEmailVerification = (token) => {
         return new Promise(async (resolve, reject) => {
-            const dbMatchResponseObject = {
-                responseCode: 0,
-                responseMessage: "No match found",
-                matchMessage: ""
+            const dbMatchResponse = {
+                match: false
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    reject(dbMatchResponseObject);
-                    return;
-                }
-                ;
                 try {
                     //Get current time
                     const currentTime = super.getCurrentTime();
                     //Check if token exists and has not expired
-                    const checkVerificationQuery = `
-                    SELECT * FROM verification 
-                    WHERE token = ?
-                    AND token_expiry > ?
-                    ;`; //token, currentTime
-                    const [queryResult] = await connectionResponseObject.mysqlConnection?.query(checkVerificationQuery, [
+                    const [queryResult] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.checkTokenVerification, [
                         token,
                         currentTime
                     ]);
                     if (queryResult.length === 1) {
-                        dbMatchResponseObject.matchMessage = "Token saved successfully";
-                        dbMatchResponseObject.responseMessage = "Match found";
-                        resolve({ dbMatchResponseObject, queryResult });
+                        dbMatchResponse.match = true;
+                        dbMatchResponse.matchTerm = queryResult;
+                        resolve(dbMatchResponse);
                     }
                     else if (queryResult.length === 0) {
-                        throw "error";
+                        throw "No matches in email token database.";
                     }
                 }
                 catch (e) {
@@ -501,38 +401,31 @@ class UsersDatabase extends models_template_1.default {
             catch (e) {
                 console.log(e);
                 //If there is some error...
-                dbMatchResponseObject.matchMessage = "Token either expired or does not exist";
-                dbMatchResponseObject.responseMessage = "No match found";
-                reject(dbMatchResponseObject);
+                dbMatchResponse.error = e;
+                reject(dbMatchResponse);
             }
         });
-    }
-    ;
+    };
     //Delete  email verification token
-    static deleteEmailVerification(token) {
+    static deleteEmailVerification = (token) => {
         return new Promise(async (resolve, reject) => {
-            const dbDeleteResponseObject = {
-                responseCode: 0,
-                responseMessage: "Delete unsuccessful",
-                deleteMessage: ""
+            const dbDeleteResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "remove",
+                accountOperation: "verify email",
+                contentType: "account"
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    reject(dbDeleteResponseObject);
-                    return;
-                }
-                ;
                 try {
-                    //Save token, email, and token expiry
-                    const saveVerificationQuery = `DELETE FROM verification WHERE token =?;`; //email
-                    await connectionResponseObject.mysqlConnection?.query(saveVerificationQuery, [
+                    //delete token, email, and token expiry
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.deleteEmailVerificationToken, [
                         token
                     ]);
-                    dbDeleteResponseObject.deleteMessage = "Token deleted successfully";
-                    dbDeleteResponseObject.responseMessage = "Delete successful";
-                    resolve(dbDeleteResponseObject);
+                    dbDeleteResponse.success = true;
+                    dbDeleteResponse.message = "operation successful";
+                    resolve(dbDeleteResponse);
                 }
                 catch (e) {
                     throw e;
@@ -546,41 +439,31 @@ class UsersDatabase extends models_template_1.default {
                 console.log(e);
                 console.log(console.trace());
                 //If there is some error...
-                dbDeleteResponseObject.deleteMessage = "Token could not be deleted";
-                dbDeleteResponseObject.responseMessage = "Delete unsuccessful";
-                reject(dbDeleteResponseObject);
+                dbDeleteResponse.error = e;
+                reject(dbDeleteResponse);
             }
         });
-    }
-    //Update verification status
+    };
     //Check email verification time
-    static updateVerification(email) {
+    static updateVerification = (email) => {
         return new Promise(async (resolve, reject) => {
-            const dbUpdateResponseObject = {
-                responseCode: 0,
-                responseMessage: "Update unsuccessful",
-                updateMessage: ""
+            const dbUpdateResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "update",
+                accountOperation: "verify email",
+                contentType: "account"
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    reject(dbUpdateResponseObject);
-                    return;
-                }
-                ;
                 try {
                     //Update user verification status here
-                    const updateVerificationQuery = `
-                    UPDATE users 
-                    SET verified = 1
-                    WHERE email = ?
-                    
-                    ;`; //email
-                    await connectionResponseObject.mysqlConnection?.query(updateVerificationQuery, [
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.updateVerificationStatus, [
                         email
                     ]);
-                    resolve(dbUpdateResponseObject);
+                    dbUpdateResponse.message = "operation successful";
+                    dbUpdateResponse.success = true;
+                    resolve(dbUpdateResponse);
                 }
                 catch (e) {
                     throw e;
@@ -595,12 +478,11 @@ class UsersDatabase extends models_template_1.default {
                 console.log(e);
                 console.log(console.trace());
                 //If there is some error...
-                dbUpdateResponseObject.updateMessage = "User verification status updated";
-                dbUpdateResponseObject.responseMessage = "Update successful";
-                reject(dbUpdateResponseObject);
+                dbUpdateResponse = e;
+                reject(dbUpdateResponse);
             }
         });
-    }
+    };
 }
 exports.default = UsersDatabase;
 //# sourceMappingURL=users_db.js.map

@@ -44,7 +44,7 @@ class vpModel {
     static getTranslationRefreshEndTime() {
         // Get current datetime
         const currentDate = dayjs();
-        const membershipDelta = currentDate.add(1, "day");
+        const membershipDelta = currentDate.add(1, "week");
         console.log(membershipDelta.toDate(), currentDate.format());
         // Format the current datetime to SQL format
         const sqlFormattedDate = strftime('%Y-%m-%d %H:%M:%S', membershipDelta.toDate());

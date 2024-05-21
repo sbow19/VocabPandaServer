@@ -15,15 +15,18 @@ DeeplAPI.use(cors());
 
 DeeplAPI.post("/", async(req, res)=>{
 
-    const userRequest = req.body;
+    const userRequest: appTypes.APITranslateCall = req.body;
 
-    console.log(req.body)
+    const translationResponse: appTypes.APITranslateResponse = {
+        success: false,
+        message: "operation unsuccessful"
+    }
 
     try{
 
         //Need to validate request string here (length);
 
-        if(userRequest.text.trim().length < 3){
+        if(userRequest.targetText.trim().length < 3){
             throw {
                 error: "String must be at least three characters long"
             }
@@ -43,26 +46,27 @@ DeeplAPI.post("/", async(req, res)=>{
                     "Content-Type": "application/json" 
                 },
                 body: JSON.stringify({
-                    "text":[`${userRequest.text}`],
-                    "source_lang": `${userRequest.source_lang}`,
-                    "target_lang":`${userRequest.target_lang}`
+                    "text":[`${userRequest.targetText}`],
+                    "source_lang": `${userRequest.targetLanguage}`,
+                    "target_lang":`${userRequest.outputLanguage}`
                 })
             }
         );
 
         const {translations} = await translationResult.json();
-s
+
         if(translations){
 
-            const translationsLeft = await UserDetailsDatabase.updateTranslationsLeft(userRequest.username);
+            const responseObject = await UserDetailsDatabase.updateTranslationsLeft(userRequest.username);
+
+            translationResponse.success = true;
+            translationResponse.translationRefreshTime = responseObject.translationRefreshTime;
+            translationResponse.translationsLeft = responseObject.translationsLeft;
+            translationResponse.translations = translations;
+            translationResponse.message = "operation successful"
             
 
-            res.status(200).json(
-                {
-                    translations, 
-                    translationsLeft: translationsLeft
-                }
-            );
+            res.status(200).send(translationResponse);
 
         } else {
 
@@ -73,7 +77,9 @@ s
     }catch(e){
         console.log(e);
         console.log(e.message)
-        res.status(500).send(e);
+        translationResponse.error = e
+        translationResponse.message = "misc error"
+        res.status(500).send(translationResponse);
     }
 
 });

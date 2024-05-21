@@ -16,8 +16,13 @@ appRouter.get("/", async (req, res)=>{
     res.send("This the is app page")
 });
 
+//When user logs into app or extension
 appRouter.use("/login", require("./api/users.js"));
 
+//When user updates entries in their project
 appRouter.use("/entries", require("./api/user_content.js"));
+
+//When user updates settings
+appRouter.use("/settings", require("./api/user_settings.js"));
 
 module.exports = appRouter;

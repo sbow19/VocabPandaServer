@@ -60,7 +60,7 @@ class vpModel {
     static getTranslationRefreshEndTime(){
         // Get current datetime
         const currentDate = dayjs();
-        const membershipDelta = currentDate.add(1, "day");
+        const membershipDelta = currentDate.add(1, "week");
 
         console.log(membershipDelta.toDate(), currentDate.format())
 

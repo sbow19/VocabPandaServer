@@ -1,4 +1,5 @@
 import UsersDatabase from "@shared/models/user_logins/users_db";
+import * as appTypes from "@appTypes/appTypes";
 
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
@@ -6,7 +7,15 @@ const nodemailer = require("nodemailer");
 
 class VocabPandaEmail {
 
-    static sendVerificationEmail(email: string){
+    static sendVerificationEmail = (email: string) => {
+
+        const sendEmailResponse: appTypes.APIAccountOperationResponse = {
+            message: "operation unsuccessful",
+            success: false,
+            operationType: "create",
+            contentType: "account",
+            accountOperation: "create account"
+        };
 
         return new Promise(async(resolve, reject)=>{
 
@@ -50,33 +59,44 @@ class VocabPandaEmail {
                 const mailSendError = new Error("nodemail", {
                     
 
-                })
+                });
+
+                sendEmailResponse.error = mailSendError;
                 console.log(e, "Error with nodemail connection");
-                reject(mailSendError)
+                reject(sendEmailResponse);
             }
         })
     }
 
-    static checkToken(token: string){
+    static checkToken = (token: string): Promise<appTypes.APIAccountOperationResponse> =>{
 
         return new Promise(async(resolve, reject)=>{
 
+            const checkEmailTokenResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "verify email"
+            };
+
             try{
                 
-                let {dbMatchResponseObject, queryResult} = await UsersDatabase.checkEmailVerification(token);
+                let dbMatchResponse = await UsersDatabase.checkEmailVerification(token);
 
-                if(dbMatchResponseObject.responseMessage === "Match found"){
+                if(dbMatchResponse.match === true){
 
                     await UsersDatabase.deleteEmailVerification(token);
 
-                    await UsersDatabase.updateVerification(queryResult[0].email)
+                    await UsersDatabase.updateVerification(dbMatchResponse.matchTerm[0].email)
 
                     resolve(console.log("User verified"));
                 }
                 
             }catch(e){
 
-                reject("User could not be verified")
+                checkEmailTokenResponse.error = e; 
+                reject(checkEmailTokenResponse); 
             }
         })
     }

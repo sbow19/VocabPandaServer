@@ -6,42 +6,32 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const models_template_1 = __importDefault(require("@shared/models/models_template"));
 const strftime = require('strftime');
 const UserDetailsDBPool = require("./user_details_pool");
+const prepared_statements_1 = __importDefault(require("../prepared_statements"));
 class UserDetailsDatabase extends models_template_1.default {
     //Add new user details
     static addNewUserDetails(userCredentials, userId) {
         return new Promise(async (resolve, reject) => {
-            const dbAddUserResponseObject = {
-                responseCode: 0,
-                responseMessage: "New user could not be added",
-                addMessage: ""
+            const addUserDetailsResponse = {
+                success: false,
+                operationType: "create",
+                accountOperation: "create account",
+                contentType: "account",
+                userId: userId,
+                message: "operation unsuccessful"
             };
             const sqlFormattedDate = super.getCurrentTime();
             try {
                 const connectionResponseObject = await super.getUsersDetailsDBConnection(); //Get connection to user_logins table
-                if (connectionResponseObject.responseMessage === "Connection unsuccessful") {
-                    //If there is a failure to connect to the database, then we reject the promise
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    dbAddUserResponseObject.addMessage = "Connection to users details database failed. Setup failed.";
-                    const dbAddUserError = new Error("Error creating user", {
-                        cause: dbAddUserResponseObject
-                    });
-                    reject(dbAddUserError);
-                    return;
-                }
                 try {
                     //Begin transaction
                     await connectionResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                    //Add new user details
-                    const addUserSqlQuery = `INSERT INTO user_details VALUES (?, ?, ?, ?);`; //username, id, last_logged_in, premium
-                    await connectionResponseObject.mysqlConnection?.query(addUserSqlQuery, [
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addUserDetails, [
                         userCredentials.username,
                         userId,
                         sqlFormattedDate,
                         0
                     ]);
-                    //Add user default settings
-                    const addUserSettingsSqlQuery = `INSERT INTO user_settings VALUES (?, ?, ?, ?, ?, ?);`; //user_id, timer_on, slider_val, target_lang, output_lang, default_project
-                    await connectionResponseObject.mysqlConnection?.query(addUserSettingsSqlQuery, [
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addDefaultSettings, [
                         userId, //User id 
                         0, // timer set to false
                         10, //default no of turns in one flashcard play
@@ -50,19 +40,14 @@ class UserDetailsDatabase extends models_template_1.default {
                         "", //No default project set yet. 
                     ]);
                     //Add x plays/ translations left and refresh times
-                    const nextPlaysSqlQuery = `INSERT INTO next_plays_refresh VALUES (?, ?);`; //user_id, game_refresh
-                    const nextTranslationsSqlQuery = `INSERT INTO next_translations_refresh VALUES (?, ?);`; //user_id, translations_refresh
-                    const playLeftSqlQuery = `INSERT INTO plays_left VALUES (?, ?);`; //user_id, plays_left
-                    const translationsLeftSqlQuery = `INSERT INTO translation_left VALUES (?, ?);`; //user_id, translation_left
-                    await connectionResponseObject.mysqlConnection?.query(nextPlaysSqlQuery, [userId, null]);
-                    await connectionResponseObject.mysqlConnection?.query(nextTranslationsSqlQuery, [userId, null]);
-                    await connectionResponseObject.mysqlConnection?.query(playLeftSqlQuery, [userId, 10]);
-                    await connectionResponseObject.mysqlConnection?.query(translationsLeftSqlQuery, [userId, 40]);
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addDefaultNextPlaysRefresh, [userId, null]);
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addDefaultNextTranslationsRefresh, [userId, null]);
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addDefaultPlaysLeft, [userId, 10]);
+                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addDefaultTranslationsLeft, [userId, 100]);
                     await connectionResponseObject.mysqlConnection?.commit(); // commit add new user transaction        
-                    dbAddUserResponseObject.responseMessage = "New user added";
-                    dbAddUserResponseObject.responseCode = 0;
-                    dbAddUserResponseObject.addMessage = "User details added successfully";
-                    resolve(dbAddUserResponseObject);
+                    addUserDetailsResponse.message = "operation successful";
+                    addUserDetailsResponse.success = true;
+                    resolve(addUserDetailsResponse);
                 }
                 catch (e) {
                     throw e;
@@ -75,13 +60,60 @@ class UserDetailsDatabase extends models_template_1.default {
             catch (e) {
                 console.log(e);
                 //If there is some error...
-                dbAddUserResponseObject.responseMessage = "New user could not be added";
-                dbAddUserResponseObject.addMessage = "Unknown error";
-                reject(dbAddUserResponseObject);
+                addUserDetailsResponse.error = e;
+                reject(addUserDetailsResponse);
             }
         });
     }
     ;
+    //Update user settings
+    static updateUserSettings = (settingsObject) => {
+        return new Promise(async (resolve, reject) => {
+            const settingsUpdateResponse = {
+                success: false,
+                message: "operation unsuccessful",
+                operationType: "update",
+                contentType: "settings"
+            };
+            try {
+                //Get db connection
+                const dbResponseObject = await super.getUsersDetailsDBConnection();
+                try {
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.settingsStatements.updateUserSettings, [
+                        settingsObject.gameTimerOn,
+                        settingsObject.gameNoOfTurns,
+                        settingsObject.defaultTargetLanguage,
+                        settingsObject.defaultOutputLanguage,
+                        settingsObject.defaultProject,
+                        settingsObject.userId
+                    ]);
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    if (queryResponse.affectedRows === 0) {
+                        settingsUpdateResponse.message = "operation unsuccessful";
+                        reject(settingsUpdateResponse);
+                    }
+                    else if (queryResponse.affectedRows > 0) {
+                        settingsUpdateResponse.message = "operation successful";
+                        settingsUpdateResponse.success = true;
+                        resolve(settingsUpdateResponse);
+                    }
+                }
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
+            }
+            catch (e) {
+                console.log(e, "update user settings error");
+                settingsUpdateResponse.message = "operation unsuccessful";
+                reject(settingsUpdateResponse);
+            }
+        });
+    };
     //Ugrade user to premium
     static upgradeToPremium(username) {
         return new Promise(async (resolve, reject) => {
@@ -339,6 +371,40 @@ class UserDetailsDatabase extends models_template_1.default {
             }
         });
     }
+    //Get translation time left
+    static getTranslationTimeLeft(username) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                //get user id 
+                const { matchMessage } = await super.getUserId(username);
+                const userId = matchMessage;
+                //Get db connection
+                const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                try {
+                    await dbConnectionObject.mysqlConnection?.beginTransaction(err => { throw err; });
+                    const [translationTimeLeftResult] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.getTranslationTimeLeft, userId);
+                    if (translationTimeLeftResult.length === 0) {
+                        throw "error, no user data";
+                    }
+                    else if (translationTimeLeftResult.length > 0) {
+                        const translationsRefreshTime = translationTimeLeftResult[0].translations_refresh;
+                        resolve(translationsRefreshTime);
+                    }
+                }
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release pool connection
+                    UserDetailsDBPool.releaseConnection(dbConnectionObject.mysqlConnection);
+                }
+                ;
+            }
+            catch (e) {
+                reject(e);
+            }
+        });
+    }
     //Subtract translations left
     static updateTranslationsLeft(username) {
         return new Promise(async (resolve, reject) => {
@@ -348,113 +414,89 @@ class UserDetailsDatabase extends models_template_1.default {
                 const userId = matchMessage;
                 //Get db connection
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
-                if (dbConnectionObject.responseMessage === "Connection unsuccessful") {
-                    throw "Cannot connect";
-                }
                 try {
-                    //SQL query to get translatoins left
-                    const checkTranslationsSqlQuery = `
-                        SELECT * FROM translation_left 
-                        WHERE user_id = ?;
-                    `;
-                    //query to check if premium
-                    const checkPremiumStatus = `SELECT *  FROM user_details WHERE user_id = ?;`;
                     await dbConnectionObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                    const [queryResult] = await dbConnectionObject.mysqlConnection?.query(checkTranslationsSqlQuery, userId);
-                    const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(checkPremiumStatus, userId);
+                    const [translationsLeftResult] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.checkTranslationsLeft, userId);
+                    console.log(translationsLeftResult);
+                    const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.checkPremiumStatus, userId);
                     if (premiumQueryResult[0].premium) {
                         //If user is premium user...
-                        if (queryResult[0].translations_left === 120) {
-                            const newTranslationsLeft = queryResult[0].translations_left - 1;
-                            const updateTranslationsQuery = `
-                                UPDATE translation_left
-                                SET translations_left = ? 
-                                WHERE user_id = ?
-                                ;
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(updateTranslationsQuery, [
+                        if (translationsLeftResult[0].translations_left === 250) {
+                            //If no translations done yet
+                            const newTranslationsLeft = translationsLeftResult[0].translations_left - 1;
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.updateTranslationsLeft, [
                                 newTranslationsLeft,
                                 userId
                             ]);
                             //Set timer on translations left
-                            const setTimerSqlQuery = `
-                                UPDATE next_translations_refresh 
-                                SET translations_refresh = ?
-                                WHERE user_id = ?
-                                ;
-                            `;
-                            const refreshEndTime = super.getTranslationRefreshEndTime();
-                            await dbConnectionObject.mysqlConnection?.query(setTimerSqlQuery, [
-                                refreshEndTime,
+                            const refreshEndTimeRaw = super.getTranslationRefreshEndTime();
+                            const refreshEndTime = new Date(refreshEndTimeRaw);
+                            const formattedDate = strftime('%Y-%m-%d %H:%M:%S', refreshEndTime);
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.setTimer, [
+                                formattedDate,
                                 userId
                             ]);
                             await dbConnectionObject.mysqlConnection?.commit();
-                            resolve(newTranslationsLeft);
+                            resolve({
+                                translationsLeft: newTranslationsLeft,
+                                translationRefreshTime: refreshEndTime
+                            });
                         }
-                        else if (queryResult[0].translations_left > 0) {
-                            const newTranslationsLeft = queryResult[0].translations_left - 1;
-                            const updateTranslationsQuery = `
-                                UPDATE translation_left
-                                SET translations_left = ? 
-                                WHERE user_id = ?
-                                ;
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(updateTranslationsQuery, [
+                        else if (translationsLeftResult[0].translations_left > 0) {
+                            //If translations less than 250
+                            const newTranslationsLeft = translationsLeftResult[0].translations_left - 1;
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.updateTranslationsLeft, [
                                 newTranslationsLeft,
                                 userId
                             ]);
                             await dbConnectionObject.mysqlConnection?.commit();
-                            resolve(newTranslationsLeft);
+                            const refreshEndTimeRaw = await this.getTranslationTimeLeft(username);
+                            const refreshEndTime = new Date(refreshEndTimeRaw);
+                            const formattedDate = strftime('%Y-%m-%d %H:%M:%S', refreshEndTime);
+                            console.log(refreshEndTime);
+                            resolve({
+                                translationsLeft: newTranslationsLeft,
+                                translationRefreshTime: refreshEndTime
+                            });
                         }
-                        else if (queryResult[0].translations_left === 0) {
+                        else if (translationsLeftResult[0].translations_left === 0) {
                             throw "No more translations allowed";
                         }
                     }
                     else if (!premiumQueryResult[0].premium) {
                         //If user is not premium...
-                        if (queryResult[0].translations_left === 40) {
-                            const newTranslationsLeft = queryResult[0].translations_left - 1;
-                            const updateTranslationsQuery = `
-                                UPDATE translation_left
-                                SET translations_left = ? 
-                                WHERE user_id = ?
-                                ;
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(updateTranslationsQuery, [
+                        if (translationsLeftResult[0].translations_left === 100) {
+                            const newTranslationsLeft = translationsLeftResult[0].translations_left - 1;
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.updateTranslationsLeft, [
                                 newTranslationsLeft,
                                 userId
                             ]);
                             //Set timer on translations left
-                            const setTimerSqlQuery = `
-                                UPDATE next_translations_refresh 
-                                SET translations_refresh = ?
-                                WHERE user_id = ?
-                                ;
-                            `;
                             const refreshEndTime = super.getTranslationRefreshEndTime();
-                            await dbConnectionObject.mysqlConnection?.query(setTimerSqlQuery, [
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.setTimer, [
                                 refreshEndTime,
                                 userId
                             ]);
                             await dbConnectionObject.mysqlConnection?.commit();
-                            resolve(newTranslationsLeft);
+                            resolve({
+                                translationsLeft: newTranslationsLeft,
+                                translationRefreshTime: refreshEndTime
+                            });
                         }
-                        else if (queryResult[0].translations_left > 0) {
-                            const newTranslationsLeft = queryResult[0].translations_left - 1;
-                            const updateTranslationsQuery = `
-                                UPDATE translation_left
-                                SET translations_left = ? 
-                                WHERE user_id = ?
-                                ;
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(updateTranslationsQuery, [
+                        else if (translationsLeftResult[0].translations_left > 0) {
+                            const newTranslationsLeft = translationsLeftResult[0].translations_left - 1;
+                            await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.updateTranslationsLeft, [
                                 newTranslationsLeft,
                                 userId
                             ]);
                             await dbConnectionObject.mysqlConnection?.commit();
-                            resolve(newTranslationsLeft);
+                            const refreshEndTime = await this.getTranslationTimeLeft(username);
+                            resolve({
+                                translationsLeft: newTranslationsLeft,
+                                translationRefreshTime: refreshEndTime
+                            });
                         }
-                        else if (queryResult[0].translations_left === 0) {
+                        else if (translationsLeftResult[0].translations_left === 0) {
                             throw "No more translations allowed";
                         }
                     }

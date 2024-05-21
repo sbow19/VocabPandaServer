@@ -5,7 +5,7 @@ const authoriseRequest = async(req, res, next)=>{
 
     try{
 
-        console.log(req)
+        // console.log(req)
 
         const credentials = basicAuth(req);
 

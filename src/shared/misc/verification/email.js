@@ -7,7 +7,14 @@ const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 class VocabPandaEmail {
-    static sendVerificationEmail(email) {
+    static sendVerificationEmail = (email) => {
+        const sendEmailResponse = {
+            message: "operation unsuccessful",
+            success: false,
+            operationType: "create",
+            contentType: "account",
+            accountOperation: "create account"
+        };
         return new Promise(async (resolve, reject) => {
             const token = crypto.randomBytes(32).toString('hex');
             try {
@@ -35,26 +42,35 @@ class VocabPandaEmail {
             }
             catch (e) {
                 const mailSendError = new Error("nodemail", {});
+                sendEmailResponse.error = mailSendError;
                 console.log(e, "Error with nodemail connection");
-                reject(mailSendError);
+                reject(sendEmailResponse);
             }
         });
-    }
-    static checkToken(token) {
+    };
+    static checkToken = (token) => {
         return new Promise(async (resolve, reject) => {
+            const checkEmailTokenResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "verify email"
+            };
             try {
-                let { dbMatchResponseObject, queryResult } = await users_db_1.default.checkEmailVerification(token);
-                if (dbMatchResponseObject.responseMessage === "Match found") {
+                let dbMatchResponse = await users_db_1.default.checkEmailVerification(token);
+                if (dbMatchResponse.match === true) {
                     await users_db_1.default.deleteEmailVerification(token);
-                    await users_db_1.default.updateVerification(queryResult[0].email);
+                    await users_db_1.default.updateVerification(dbMatchResponse.matchTerm[0].email);
                     resolve(console.log("User verified"));
                 }
             }
             catch (e) {
-                reject("User could not be verified");
+                checkEmailTokenResponse.error = e;
+                reject(checkEmailTokenResponse);
             }
         });
-    }
+    };
 }
 exports.default = VocabPandaEmail;
 //# sourceMappingURL=email.js.map

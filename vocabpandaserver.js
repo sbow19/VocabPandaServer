@@ -8,15 +8,19 @@ const uuid = require("uuid");
 require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const cron_1 = __importDefault(require("@shared/updates/cron"));
-const express = require('express');
+const express_1 = __importDefault(require("express"));
 const cors = require('cors');
-//PATH TO SSL CERTIFICATE AND KEY HERE 
-const vocabpandaserver = express();
+// //PATH TO SSL CERTIFICATE AND KEY HERE 
+// const options = {
+//     key: fs.readFileSync("C:\\Users\\lenovo\\Desktop\\Dev\\projects\\VP\\https\\dev_ssl\\server.key"),
+//     cert: fs.readFileSync("C:\\Users\\lenovo\\Desktop\\Dev\\projects\\VP\\https\\dev_ssl\\server.cert")
+//   };
+const vocabpandaserver = (0, express_1.default)();
 vocabpandaserver.use(cors());
 const PORT = 3000 || process.env.PORT;
 //SET CHECKING INTERVALS - CRON JOBS
 cron_1.default.runCronJobs();
-vocabpandaserver.use(express.json());
+vocabpandaserver.use(express_1.default.json());
 //Generate device api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {
     try {
@@ -66,8 +70,19 @@ vocabpandaserver.use('/account', require("./src/shared/routes/account/account.js
 vocabpandaserver.use('/app', require("./src/app/routes/main.js"));
 //Redirect to Deepl API
 vocabpandaserver.use('/translate', require("./src/shared/deeplAPI/deeplAPI.js"));
-//Initiate server 
 vocabpandaserver.listen(PORT, () => {
-    console.log("listening to port 3000...");
+    console.log("Now listening on port 3000...");
 });
+//Initiate server 
+// https.createServer(options, vocabpandaserver).listen(PORT, ()=>{
+//     console.log("listening to port 3000...")
+// });
+// // // Redirect HTTP to HTTPS
+// import * as http from 'http';
+// http.createServer((req, res) => {
+//   res.writeHead(301, { "Location": `https://${req.headers.host}${req.url}` });
+//   res.end();
+// }).listen(80, () => {
+//   console.log('HTTP server running on port 80 and redirecting to HTTPS on port 3000');
+// });
 //# sourceMappingURL=vocabpandaserver.js.map

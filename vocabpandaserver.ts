@@ -6,11 +6,15 @@ import UsersDatabase from "@shared/models/user_logins/users_db";
 import * as appTypes from "@appTypes/appTypes";
 import CronClass from "@shared/updates/cron";
 
-const express = require('express');
+import express from 'express';
 const cors = require('cors');
 
 
-//PATH TO SSL CERTIFICATE AND KEY HERE 
+// //PATH TO SSL CERTIFICATE AND KEY HERE 
+// const options = {
+//     key: fs.readFileSync("C:\\Users\\lenovo\\Desktop\\Dev\\projects\\VP\\https\\dev_ssl\\server.key"),
+//     cert: fs.readFileSync("C:\\Users\\lenovo\\Desktop\\Dev\\projects\\VP\\https\\dev_ssl\\server.cert")
+//   };
 
 const vocabpandaserver = express();
 vocabpandaserver.use(cors());
@@ -102,7 +106,21 @@ vocabpandaserver.use('/app', require("./src/app/routes/main.js"));
 //Redirect to Deepl API
 vocabpandaserver.use('/translate', require("./src/shared/deeplAPI/deeplAPI.js"));
 
-//Initiate server 
+
 vocabpandaserver.listen(PORT, ()=>{
-    console.log("listening to port 3000...")
-});
+    console.log("Now listening on port 3000...")
+})
+
+//Initiate server 
+// https.createServer(options, vocabpandaserver).listen(PORT, ()=>{
+//     console.log("listening to port 3000...")
+// });
+
+// // // Redirect HTTP to HTTPS
+// import * as http from 'http';
+// http.createServer((req, res) => {
+//   res.writeHead(301, { "Location": `https://${req.headers.host}${req.url}` });
+//   res.end();
+// }).listen(80, () => {
+//   console.log('HTTP server running on port 80 and redirecting to HTTPS on port 3000');
+// });

@@ -1,7 +1,7 @@
 import * as appTypes from "@appTypes/appTypes"
-const mysql = require("mysql2/promise");
-const {v4: uuidv4} = require('uuid');
 import vpModel from "@shared/models/models_template";
+import preparedSQLStatements from "../prepared_statements";
+import { PoolConnection } from "mysql2/typings/mysql/lib/PoolConnection";
 const bcrypt = require('bcrypt');
 const basicAuth = require("basic-auth");
 const UserDBPool = require("./users_db_pool");
@@ -9,55 +9,6 @@ const UserDBPool = require("./users_db_pool");
 
 class UsersDatabase extends vpModel {
 
-    static #checkDB(dbSearchObject: appTypes.DBSearchObject<appTypes.UsersLoginsDB>): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>{
-
-        const matchResponseObject: appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig> = {
-            matchMessage: "",
-            responseCode: 0,
-            responseMessage: "No match found",
-            matchType: ""
-        }
-
-        const matchSearchArray: Array<appTypes.MatchTerms<appTypes.UsersTableColumns>> = dbSearchObject.matchTerms
-
-        return new Promise(async(resolve, reject)=>{
-
-            try{
-
-                //Cycle through match search array to find a match
-
-                for (let termObject of matchSearchArray){
-
-                    let matchQuery = 
-
-                    `SELECT * FROM ${dbSearchObject.table} 
-                    WHERE ${termObject.column} = ?
-                    `
-                    
-                    const [databaseResult] = await dbSearchObject.mysqlConnection.query(matchQuery, termObject.term)
-
-                    if (databaseResult.length > 0){
-
-                        //If the database returns a result, then the email or password exists.
-
-                        matchResponseObject.responseMessage = "Match found";
-
-                        reject(matchResponseObject)
-                        return
-                    }
-
-                }
-
-                //if none of the terms (email and password) match an entry in the database, then the user does not exist
-
-                resolve(matchResponseObject)
-                
-            } catch (e){
-
-                reject(e)
-            }
-        })
-    }
 
     static checkCredentials(userCredentials: {name: string, pass: string}): Promise<appTypes.DBResponseObject<appTypes.DBMatchResponseConfig>>{
 
@@ -235,57 +186,95 @@ class UsersDatabase extends vpModel {
         })
     }
 
+    //Check for existsing users
+    static #checkForUsers(dbConnection: PoolConnection, userCredentials: appTypes.UserCredentials): Promise<appTypes.dbMatchResponse> {
 
+        return new Promise(async(resolve, reject)=>{
+
+            const matchResponse: appTypes.dbMatchResponse = {
+                match: false
+            }
+
+            try{
+
+                    
+                    const [userDatabaseResult] = await dbConnection.query(
+                        preparedSQLStatements.generalStatements.usersUsernameMatch, 
+                        userCredentials.username
+                    );
+
+                    const [emailDatabaseResult] = await dbConnection.query(
+                        preparedSQLStatements.generalStatements.usersEmailMatch, 
+                        userCredentials.email
+                    );
+    
+                    if (userDatabaseResult.length === 0 && emailDatabaseResult.length === 0){
+    
+                        //If there is a negative result, then the email or username does not exist.
+    
+                        matchResponse.match = false;
+                        resolve(matchResponse);
+                    } 
+                    
+                    else if (userDatabaseResult.length > 0) {
+    
+                        //if there is a positive match, then the user exists, so we resolve the match object
+                        matchResponse.match = true;
+                        matchResponse.matchTerm = userDatabaseResult;
+                        resolve(matchResponse);
+                        
+                    } 
+                    
+                    else if (emailDatabaseResult.length > 0) {
+
+                        //if there is a positive match, then the user exists, so we resolve the match object
+                        matchResponse.match = true;
+                        matchResponse.matchTerm = emailDatabaseResult;
+                        resolve(matchResponse);
+    
+                        
+                    }
+
+                }catch(e){
+
+                    matchResponse.error = e;
+                    reject(e);
+
+                }
+
+                
+        })
+    }
 
     //Create new user + connection and match attempt
-    static createNewUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBAddUserResponseObject<appTypes.DBAddUserResponseConfig>>{
+    static createNewUser(userCredentials: appTypes.APICreateAccount, deviceCredentials): Promise<appTypes.APIAccountOperationResponse>{
 
         //Attempt to get db connection
 
         return new Promise(async(resolve, reject)=>{
 
 
-            const dbAddUserResponseObject: appTypes.DBAddUserResponseObject<appTypes.DBAddUserResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "New user added", 
-                addMessage: ""
-            }
-
-            //Configure search array
-
-            const usernameSearchObject: appTypes.MatchTerms<appTypes.UsersTableColumns> = {
-                term: userCredentials?.username,
-                column: "username"
-            } 
-
-            const emailSearchObject: appTypes.MatchTerms<appTypes.UsersTableColumns> = {
-                term: userCredentials?.email,
-                column: "email"
-            }
+            const createUserResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "create account"
+            };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                    dbAddUserResponseObject.responseMessage =  "New user could not be added"
-                    reject(dbAddUserResponseObject)
-                    return
-                }
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
-                    const checkEmailResponse = await this.#checkDB({mysqlConnection:connectionResponseObject.mysqlConnection, table:"users", matchTerms: [emailSearchObject]});
+                    
+                    //Check for user details, if no match then
+                    const matchMessage = await this.#checkForUsers(connectionResponseObject.mysqlConnection, userCredentials);
 
-                const checkUsernameResponse = await this.#checkDB({mysqlConnection:connectionResponseObject.mysqlConnection, table:"users", matchTerms: [usernameSearchObject]});
-
-                const checkVerificationResponse = await this.#checkDB({mysqlConnection:connectionResponseObject.mysqlConnection, table:"verification", matchTerms: [emailSearchObject]});
-
-
-                if(checkUsernameResponse.responseMessage === "No match found" && checkVerificationResponse.responseMessage === "No match found" &&
-                    checkEmailResponse.responseMessage === "No match found"
-                ){
-                    //IF no match found in checking for users
+                    //If match then we reject the promise
+                    if(matchMessage.match){
+                        throw matchMessage
+                    }
 
                     //New user id
 
@@ -295,75 +284,35 @@ class UsersDatabase extends vpModel {
 
                     //Password hash
 
-                    const addUserSqlQuery =  `INSERT INTO users VALUES (?, ?, ?, ?, DEFAULT, DEFAULT, 0);` //id, username, email, password_hash, verified
-
                     await connectionResponseObject.mysqlConnection?.query(
-                        addUserSqlQuery,
+                        preparedSQLStatements.accountStatements.addAccount,
                         [
                             newUserId,
                             userCredentials.username,
                             userCredentials.email,
                             userCredentials.password
-                        ])
+                        ]
+                    )
                     
-                    //Connect new user id to device id
+                    //Connect new user id to device id 
 
-                    const addUserDevice = 
-                    `UPDATE api_keys 
-                    SET user_id = ? 
-                    WHERE
-                        api_key = ?
-                    AND
-                        device_id = ? 
-                    `
-
-                    await connectionResponseObject.mysqlConnection?.query(addUserDevice,[
+                    await connectionResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.accountStatements.connectUserDeviceToAccount,[
                         newUserId,
-                        userCredentials.apiKey,
-                        userCredentials.deviceId
+                        deviceCredentials.pass,
+                        deviceCredentials.name
                     ])
 
                     connectionResponseObject.mysqlConnection?.commit();
-            
+                
 
-                    dbAddUserResponseObject.responseMessage = "New user added";
-                    dbAddUserResponseObject.responseCode = 0;
-                    dbAddUserResponseObject.addMessage = newUserId; //Send the user id back to add new details
+                    createUserResponse.success = true;
+                    createUserResponse.message = "operation successful";
+                    createUserResponse.userId = newUserId; //Send the user id back to add new details
 
-                    resolve(dbAddUserResponseObject)
-                    return
+                    resolve(createUserResponse)
+                        
 
-                } 
-                else if (
-                    checkEmailResponse.responseMessage === "Match found" && 
-                    checkVerificationResponse.responseMessage === "Match found"
-                ){
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    dbAddUserResponseObject.addMessage = "Email already exists. Verification required."
-                    resolve(dbAddUserResponseObject)
-                    return
-                } 
-                else if (
-                    checkEmailResponse.responseMessage === "Match found" &&
-                    checkVerificationResponse.responseMessage === "No match found"
-                ) {
-
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    dbAddUserResponseObject.addMessage = "Email already exists."
-                    resolve(dbAddUserResponseObject)
-                    return
-
-                } 
-                else if (
-                    checkUsernameResponse.responseMessage === "Match found"
-                ){
-
-                    dbAddUserResponseObject.responseMessage = "New user could not be added";
-                    dbAddUserResponseObject.addMessage = "Username already exists."
-                    resolve(dbAddUserResponseObject)
-                    return
-
-                }
 
                 }catch(e){
                     throw e
@@ -379,102 +328,85 @@ class UsersDatabase extends vpModel {
 
                 console.log(e);
 
-                //If there is some error...
-                dbAddUserResponseObject.responseMessage = "New user could not be added";
-                dbAddUserResponseObject.addMessage = e
-                reject(dbAddUserResponseObject);
-                return
+                if(e.match === "match"){
+
+                    createUserResponse.customResponse = "user exists"
+                    reject(createUserResponse)
+                } else {
+
+                    //If there is some error...
+                    createUserResponse.error = e;
+                    reject(createUserResponse);
+
+                }
+                
             }
         })
 
     }
 
     //Delete user
-    static deleteUser(userCredentials: appTypes.UserCredentials){
+    static deleteUser(userCredentials: appTypes.APIDeleteAccount): Promise<appTypes.APIAccountOperationResponse>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbDeleteUserResponseObject: appTypes.DBDeleteUserResponseObject<appTypes.DBDeleteUserResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "User could not be deleted", 
-                deleteMessage: ""
+            const deleteUserResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "remove",
+                contentType: "account",
+                accountOperation: "delete account"
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                    dbDeleteUserResponseObject.responseMessage =  "User could not be deleted"
-                    reject(dbDeleteUserResponseObject)
-                    return
-                }
+                const dbConnection = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
 
-                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
-
-                    //Get user details ( Note that usernames are uqniue in the database )
-                    let userMatchQuery = 
-
-                    `SELECT * FROM users 
-                    WHERE ${userCredentials.identifierType} = ?
-                    ;
-                    `
+                    dbConnection.mysqlConnection?.beginTransaction(err=>{throw err})
                     
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.username);
+    
+                    const [databaseResult] = await dbConnection.mysqlConnection?.query(
+                        preparedSQLStatements.generalStatements.userIdMatch
+                        , 
+                    [userCredentials.userId,
+                         userCredentials.userId]);
                     
 
-                    if (databaseResult.length === 0){
-
-                        //If there is a negative result, then the email or username does not exist.
-
-                        dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                        dbDeleteUserResponseObject.deleteMessage = "Username or password does not match"
-
-                        reject(dbDeleteUserResponseObject)
-                    } else if (databaseResult.length>0) {
-
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        
-                        if(await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)){
-                            //match successful Leave empty, continue
-                        } else {
-                            dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                            dbDeleteUserResponseObject.deleteMessage = "Username or password does not match"
-                            reject(dbDeleteUserResponseObject)
-                            return
-                        } 
-                    }
-
-                    //IF match found in checking for users, then account can be deleted.
-
-                    const deleteUserSqlQuery =  
-                    `DELETE FROM users 
-                    WHERE username = ?
-                    ;` 
+   
+                    if(await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)){
+                        //match successful Leave empty, continue
+                    } else {
+                        throw deleteUserResponse;
+                    } 
                     
-                    await connectionResponseObject.mysqlConnection?.query(
-                        deleteUserSqlQuery, userCredentials.username, err=>{
-                            throw err
-                    });
 
-                    connectionResponseObject.mysqlConnection?.commit();
+                    //IF match found in checking for users, then account can be deleted. 
+                
+                    await dbConnection.mysqlConnection?.query(
+                        preparedSQLStatements.accountStatements.deleteAccount, 
+                        [
+                            userCredentials.userId,
+                            userCredentials.userId
+
+                        ])
+
+                    dbConnection.mysqlConnection?.commit();
 
             
 
-                    dbDeleteUserResponseObject.responseMessage = "User successfully deleted";
-                    dbDeleteUserResponseObject.responseCode = 0;
+                    deleteUserResponse.message = "operation successful";
+                    deleteUserResponse.success = true;
 
-                    resolve(dbDeleteUserResponseObject)  
+                    resolve(deleteUserResponse)  
 
                 }catch(e){
                     throw e
                 }finally{
 
                     //Release 
-                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                    UserDBPool.releaseConnection(dbConnection.mysqlConnection);
 
                 }              
 
@@ -482,88 +414,68 @@ class UsersDatabase extends vpModel {
                 console.log(e);
 
                 //If there is some error...
-                dbDeleteUserResponseObject.responseMessage = "User could not be deleted";
-                dbDeleteUserResponseObject.deleteMessage = e
-                reject(dbDeleteUserResponseObject);
-                return
+                deleteUserResponse.error = e
+                reject(deleteUserResponse);
+                
             }
         })
     };
 
     //Update password
 
-    static updatePassword(userCredentials: appTypes.UserCredentials, newPassword: string): Promise<appTypes.DBUpdatePasswordResponseObject<appTypes.DBUpdatePasswordResponseConfig>>{
+    static updatePassword(accountObject: appTypes.APIUpdatePassword): Promise<appTypes.APIAccountOperationResponse>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbUpdatePasswordResponseObject: appTypes.DBUpdatePasswordResponseObject<appTypes.DBUpdatePasswordResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "Password could not be updated", 
-                updateMessage: ""
+
+
+            const updatePasswordResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "update",
+                contentType: "account",
+                accountOperation: "change password"
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                
-                    resolve(dbUpdatePasswordResponseObject)
-                    return
-                }
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
-
-                    //Get user details ( Note that usernames are uqniue in the database )
-                    let userMatchQuery = 
-
-                    `SELECT * FROM users 
-                    WHERE ${userCredentials.identifierType} = ?
-                    `
+                             
+                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err})
                     
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.userName);
+    
+                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.generalStatements.userIdMatch
+                        , 
+                    accountObject.userId);
                     
 
-                    if (databaseResult.length === 0){
+                    //if there is a positive match, then the user exists, we will then check the hash    
+                    
+                    if(await bcrypt.compare(accountObject.oldPassword, databaseResult[0].password_hash)){
+                        //match successful Leave empty, continue
+                    } else {
+                        reject(updatePasswordResponse)
+                        return
+                    } 
 
-                        //If there is a negative result, then the email or username does not exist.
+                    //Generate new hashed password
 
-                        dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated"
-                        dbUpdatePasswordResponseObject.updateMessage = "Username or password does not match"
-
-                        reject(dbUpdatePasswordResponseObject)
-                    } else if (databaseResult.length>0) {
-
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        
-                        if(await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)){
-                            //match successful Leave empty, continue
-                        } else {
-                            dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated"
-                            dbUpdatePasswordResponseObject.deleteMessage = "Username or password does not match"
-                            reject(dbUpdatePasswordResponseObject)
-                        } 
-                    }
-            
-                    //IF match found in checking for users, then account can be updated.
-
-                    const updatePasswordSqlQuery =  
-                    `UPDATE users 
-                    SET password_hash = ?
-                    WHERE username = ?
-                    ;` 
+                    const salt = await bcrypt.genSalt();
+                    const hashedPassword = await bcrypt.hash(accountObject.newPassword, salt);
                     
                     //new password_hash, username
 
-                    const updatePasswordResult = await connectionResponseObject.mysqlConnection.query(
-                        updatePasswordSqlQuery, [newPassword, userCredentials.userName])
-            
-
-                    dbUpdatePasswordResponseObject.responseMessage = "Password updated successfully";
+                    await connectionResponseObject.mysqlConnection.query(
+                        preparedSQLStatements.accountStatements.updatePassword,
+                        [hashedPassword, accountObject.userId]
+                    );
                     
-                    
+                    updatePasswordResponse.message = "operation successful";
+                    updatePasswordResponse.success = true;
 
-                    resolve(dbUpdatePasswordResponseObject);
+                    resolve(updatePasswordResponse);
 
                 }catch(e){
                     throw e
@@ -578,35 +490,28 @@ class UsersDatabase extends vpModel {
                 console.log(e);
 
                 //If there is some error...
-                dbUpdatePasswordResponseObject.updateMessage = "User password could not be deleted"
-                dbUpdatePasswordResponseObject.responseMessage = "Password could not be updated"
-                resolve(dbUpdatePasswordResponseObject)
+                updatePasswordResponse.error = e;
+                reject(updatePasswordResponse);
                 
             }
         })
     }
 
     //Save email verification token
-    static saveEmailVerification(token: string, email: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>{
+    static saveEmailVerification(token: string, email: string): Promise<appTypes.APIAccountOperationResponse>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbAddResponseObject: appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "Add unsuccessful", 
-                addMessage: "",
-                addType: "entry"
+            const addEmailTokenResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "create",
+                contentType: "account",
+                accountOperation: "create account"
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                
-                    resolve(dbAddResponseObject)
-                    return
-                };
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
 
@@ -615,10 +520,9 @@ class UsersDatabase extends vpModel {
                     const tokenExpiry = super.getTokenExpiry(); 
 
                     //Save token, email, and token expiry
-                    const saveVerificationQuery = `INSERT INTO verification VALUES (?, ?, ?);` //email, token, token_expiry
                     
                     await connectionResponseObject.mysqlConnection?.query(
-                        saveVerificationQuery, 
+                        preparedSQLStatements.accountStatements.addEmailVerificationToken, 
                         [
                             email,
                             token,
@@ -626,10 +530,10 @@ class UsersDatabase extends vpModel {
                         ]
                     );
 
-                    dbAddResponseObject.addMessage = "Token saved successfully";
-                    dbAddResponseObject.responseMessage = "Add successful";
+                    addEmailTokenResponse.success = true;
+                    addEmailTokenResponse.message = "operation successful";
                     
-                    resolve(dbAddResponseObject);
+                    resolve(addEmailTokenResponse);
 
                 }catch(e){
                     throw e 
@@ -643,34 +547,23 @@ class UsersDatabase extends vpModel {
                 console.log(e);
                 console.log(console.trace());
                 //If there is some error...
-                dbAddResponseObject.addMessage = "Token could not be saved"
-                dbAddResponseObject.responseMessage = "Add unsuccessful"
-                reject(dbAddResponseObject)
+                addEmailTokenResponse.error = e;
+                reject(addEmailTokenResponse);
             }
         })
     }
 
     //Check email verification time
-
-    static checkEmailVerification(token: string): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>{
+    static checkEmailVerification = (token: string): Promise<appTypes.dbMatchResponse> =>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbMatchResponseObject: appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "No match found", 
-                matchMessage: ""
+            const dbMatchResponse: appTypes.dbMatchResponse = {
+                match: false
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                
-                    reject(dbMatchResponseObject);
-                    return
-                };
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
 
@@ -678,14 +571,9 @@ class UsersDatabase extends vpModel {
                     const currentTime = super.getCurrentTime();
 
                     //Check if token exists and has not expired
-                    const checkVerificationQuery = `
-                    SELECT * FROM verification 
-                    WHERE token = ?
-                    AND token_expiry > ?
-                    ;` //token, currentTime
                     
                     const [queryResult] = await connectionResponseObject.mysqlConnection?.query(
-                        checkVerificationQuery, 
+                        preparedSQLStatements.accountStatements.checkTokenVerification, 
                         [
                             token,
                             currentTime
@@ -694,13 +582,13 @@ class UsersDatabase extends vpModel {
 
                     if(queryResult.length === 1){
 
-                        dbMatchResponseObject.matchMessage = "Token saved successfully";
-                        dbMatchResponseObject.responseMessage = "Match found"
-                        
-                        resolve({dbMatchResponseObject, queryResult})
+                        dbMatchResponse.match = true;      
+                        dbMatchResponse.matchTerm = queryResult;          
+                        resolve(dbMatchResponse);
+
                     } else if (queryResult.length === 0){
 
-                        throw "error"
+                        throw "No matches in email token database."
                     }
 
                 }catch(e){
@@ -713,9 +601,8 @@ class UsersDatabase extends vpModel {
             }catch(e){
                 console.log(e);
                 //If there is some error...
-                dbMatchResponseObject.matchMessage = "Token either expired or does not exist"
-                dbMatchResponseObject.responseMessage = "No match found"
-                reject(dbMatchResponseObject);
+                dbMatchResponse.error = e;
+                reject(dbMatchResponse);
                 
             }
         })
@@ -723,41 +610,36 @@ class UsersDatabase extends vpModel {
 
 
     //Delete  email verification token
-    static deleteEmailVerification(token: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>{
+    static deleteEmailVerification = (token: string): Promise<appTypes.APIAccountOperationResponse> =>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbDeleteResponseObject: appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "Delete unsuccessful", 
-                deleteMessage: ""
+            const dbDeleteResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "remove",
+                accountOperation: "verify email",
+                contentType: "account"
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                
-                    reject(dbDeleteResponseObject)
-                    return
-                };
 
                 try{
-                    //Save token, email, and token expiry
-                    const saveVerificationQuery = `DELETE FROM verification WHERE token =?;` //email
+                    //delete token, email, and token expiry
                     
                     await connectionResponseObject.mysqlConnection?.query(
-                        saveVerificationQuery, 
+                        preparedSQLStatements.accountStatements.deleteEmailVerificationToken, 
                         [
                             token
                         ]
                     );
 
-                    dbDeleteResponseObject.deleteMessage = "Token deleted successfully";
-                    dbDeleteResponseObject.responseMessage = "Delete successful"
+                    dbDeleteResponse.success = true;
+                    dbDeleteResponse.message = "operation successful";
                     
-                    resolve(dbDeleteResponseObject);
+                    resolve(dbDeleteResponse);
 
                 }catch(e){
                     throw e
@@ -772,55 +654,44 @@ class UsersDatabase extends vpModel {
                 console.log(console.trace()); 
 
                 //If there is some error...
-                dbDeleteResponseObject.deleteMessage = "Token could not be deleted";
-                dbDeleteResponseObject.responseMessage = "Delete unsuccessful";
-                reject(dbDeleteResponseObject);
+                dbDeleteResponse.error = e;
+                reject(dbDeleteResponse);
             }
         })
     }
 
-    //Update verification status
-
     //Check email verification time
 
-     static updateVerification(email: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>{
+    static updateVerification =(email: string): Promise<appTypes.APIAccountOperationResponse> => {
         return new Promise(async(resolve, reject)=>{
 
-            const dbUpdateResponseObject: appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig> = {
-                responseCode: 0, 
-                responseMessage: "Update unsuccessful", 
-                updateMessage: ""
+            const dbUpdateResponse: appTypes.APIAccountOperationResponse = {
+                message: "operation unsuccessful",
+                success: false,
+                operationType: "update",
+                accountOperation: "verify email",
+                contentType: "account"
             };
 
             try{
 
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                    //If there is a failure to connect to the database, then we reject the promise
-                
-                    reject(dbUpdateResponseObject);
-                    return
-                };
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
 
                     //Update user verification status here
-                    const updateVerificationQuery = `
-                    UPDATE users 
-                    SET verified = 1
-                    WHERE email = ?
-                    
-                    ;` //email
                     
                     await connectionResponseObject.mysqlConnection?.query(
-                        updateVerificationQuery, 
+                        preparedSQLStatements.accountStatements.updateVerificationStatus, 
                         [
                             email
                         ]
                     );
+
+                    dbUpdateResponse.message = "operation successful";
+                    dbUpdateResponse.success = true;
                     
-                    resolve(dbUpdateResponseObject);
+                    resolve( dbUpdateResponse);
                 }catch(e){
                     throw e
                 }finally{
@@ -834,9 +705,8 @@ class UsersDatabase extends vpModel {
                 console.log(console.trace())
 
                 //If there is some error...
-                dbUpdateResponseObject.updateMessage = "User verification status updated"
-                dbUpdateResponseObject.responseMessage = "Update successful"
-                reject(dbUpdateResponseObject)
+                dbUpdateResponse = e;
+                reject(dbUpdateResponse);
                 
             }
         })

@@ -14,7 +14,7 @@ usersRouter.use(authoriseRequest);
 //Login
 usersRouter.post("/", async(req, res)=>{
 
-    const loginResultObject = req.body.loginResultObject;
+    const loginResultObject: appTypes.APILoginUser = req.body.loginResultObject;
 
     //Check whether login was successful locally. Otherwise, we need to conduct login here.
     if(loginResultObject.loginSuccess){

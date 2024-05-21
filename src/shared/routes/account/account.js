@@ -32,17 +32,12 @@ AccountRouter.get("/createaccount/verify", async (req, res) => {
 AccountRouter.use(authoriseRequest);
 //Create account
 AccountRouter.post("/createaccount", async (req, res) => {
-    let userCreds;
+    let userCreds = req.body;
+    let deviceCreds = {};
     let hashedPassword;
     //get deviceid and API key
     const credentials = basicAuth(req);
-    const APIKey = credentials.pass;
-    console.log(req.body);
-    const APIResponseObject = {
-        addMessage: "",
-        responseMessage: "Add unsuccessful",
-        userId: ""
-    };
+    deviceCreds = credentials;
     try {
         const salt = await bycrypt.genSalt();
         hashedPassword = await bycrypt.hash(req.body.password, salt);
@@ -58,75 +53,59 @@ AccountRouter.post("/createaccount", async (req, res) => {
         return;
     }
     try {
-        const dbAddUserResponseObject = await users_db_1.default.createNewUser(userCreds); //Add new user to user_logins db. Verification checks undertaken within function.
-        if (dbAddUserResponseObject.responseMessage === "New user could not be added") {
-            const addNewUserError = new Error("New user could not be added.", {
-                cause: dbAddUserResponseObject.addMessage
-            });
-            throw addNewUserError;
+        const addUserResponse = await users_db_1.default.createNewUser(userCreds, deviceCreds); //Add new user to user_logins db. Verification checks undertaken within function.
+        if (!addUserResponse.success) {
+            throw addUserResponse;
         }
         ;
+        //Then we can move onto adding the users details.
+        await user_details_db_1.default.addNewUserDetails(userCreds, addUserResponse.userId); //Create new user returns  user id in .add.message property
         //Send email verification link to email provided by user -- If cannot send due to network error, then we don't move to saving the details in the database
         await email_1.default.sendVerificationEmail(req.body.email);
-        //Then we can move onto adding the users details.
-        await user_details_db_1.default.addNewUserDetails(userCreds, dbAddUserResponseObject.addMessage); //Create new user returns  user id in .add.message property
         //Configure API response object 
-        APIResponseObject.addMessage = "User added successfully!";
-        APIResponseObject.responseMessage = "Add successful";
-        APIResponseObject.userId = dbAddUserResponseObject.addMessage;
-        res.status(200).send(APIResponseObject);
+        res.status(200).send(addUserResponse);
     }
     catch (e) {
-        APIResponseObject.addMessage = e;
-        APIResponseObject.responseMessage = "Add unsuccessful";
-        //Error object sent to front end 
-        res.status(200).send(APIResponseObject);
-        if (e.message === "nodemail") {
-            console.log("error message here");
-            //If nodemail fails to send a response, then we delete the user just crated
+        if (e.customResponse === "user exists") {
+            res.status(500).send(e);
+        }
+        else {
+            //If some other error apart from user existing
+            res.status(500).send(e);
             try {
                 const deleteResponseObject = await users_db_1.default.deleteUser({
-                    username: userCreds.username,
+                    userId: userCreds.username,
                     password: req.body.password,
-                    identifierType: "username"
                 });
                 console.log(deleteResponseObject);
             }
             catch (e) {
-                console.log(e);
+                console.log(e, "Create account operation");
             }
         }
     }
 });
 //TODO trigger payment cancellation logic here
-AccountRouter.delete("/deleteaccount", async (req, res) => {
+AccountRouter.post("/deleteaccount", async (req, res) => {
     //verify credentials
     try {
-        const dbResponseObject = await users_db_1.default.deleteUser({
-            userName: req.body.userName,
-            password: req.body.password,
-            identifierType: "username"
-        });
-        res.status(200).send(dbResponseObject);
+        const userCredentials = req.body;
+        const accountDeletionResponse = await users_db_1.default.deleteUser(userCredentials);
+        res.status(200).send(accountDeletionResponse);
     }
-    catch (e) {
-        res.status(500).send();
+    catch (accountDeletionResponse) {
+        res.status(500).send(accountDeletionResponse);
     }
 });
 //Update password
-AccountRouter.put("/updatepassword", async (req, res) => {
+AccountRouter.post("/updatepassword", async (req, res) => {
+    const accountDetails = req.body;
     try {
-        const salt = await bycrypt.genSalt();
-        const hashedPassword = await bycrypt.hash(req.body.newPassword, salt);
-        const dbResponseObject = await users_db_1.default.updatePassword({
-            userName: req.body.userName,
-            password: req.body.password,
-            identifierType: "username"
-        }, hashedPassword);
+        const dbResponseObject = await users_db_1.default.updatePassword(accountDetails);
         res.status(200).send(dbResponseObject);
     }
-    catch (e) {
-        res.status(500).send();
+    catch (dbResponseObject) {
+        res.status(500).send(dbResponseObject);
     }
 });
 //Payment

@@ -42,20 +42,11 @@ import * as mysql from "mysql2"
 
     //DB response template for matching in database
 
-    export type DBMatchResponseObject<DBMatchResponseConfig extends Record<string, any>> = 
-
-        ResponseObject<DBMatchResponseConfig["responseCodeOptions"], DBMatchResponseConfig["responseMessageOptions"]> & {
-           matchMessage: DBMatchResponseConfig["matchMessage"]
-           matchType: "email" | "username" | "" | "email & username"
-
-    }
-
-    export type DBMatchResponseConfig = {
-        responseCodeOptions: 0 | 1 | 2
-        responseMessageOptions: "Match found" | "No match found"
-        matchMessage: string
-
-        
+    export type dbMatchResponse = {
+        match: boolean
+        error?: Error | string
+        matchTerm?: string
+        matchColumn?: string
     }
 
     //DB Response template for adding user entry
@@ -74,21 +65,7 @@ import * as mysql from "mysql2"
         
     }
 
-    //DB Response template for deleting user entry
 
-    export type DBDeleteUserResponseObject<DBDeleteResponseConfig extends Record<string, any>> = 
-
-        ResponseObject<DBDeleteResponseConfig["responseCodeOptions"], DBDeleteUserResponseConfig["responseMessageOptions"]> & {
-           deleteMessage: DBDeleteUserResponseConfig["deleteMessage"];
-
-    }
-
-    export type DBDeleteUserResponseConfig = {
-        responseCodeOptions: 0 | 1 | 2
-        responseMessageOptions: "User successfully deleted" | "User could not be deleted"
-        deleteMessage: string
-        
-    }
 
      //DB Response template for updating user password
 
@@ -227,11 +204,12 @@ deleteType: "project" | "entry" | "tag"
 
     //User content posts
 
-    export type NewProjectDetails = {
+    export type ProjectDetails = {
 
         projectName: string
-        target_lang: string
-        output_lang: string
+        targetLanguage: string
+        outputLanguage: string
+        userId: string
 
     }
 
@@ -248,6 +226,16 @@ deleteType: "project" | "entry" | "tag"
         userId: string
         username: string
         entryId: string
+    }
+
+    //User settings object
+    export type UserSettings = {
+        gameTimerOn: boolean
+        gameNoOfTurns: number
+        defaultTargetLanguage: string
+        defaultOutputLanguage: string
+        defaultProject: string
+        userId: string
     }
 
     export type refreshErrorResponse ={
@@ -267,14 +255,99 @@ deleteType: "project" | "entry" | "tag"
     }
 
 
-    //REVISED & SIMPLIFIED TYPES
+    //API related
 
-    export type APIEntryResponse = {
+    /*
+        API responses relate to responses of operations that occur on the backend. API objects 
+        also relate to information passed from the front end to the backend.These much match the
+        type definitions defined for the frontend.
+    */
+
+    export type APIOperationResponse = {
         success: Boolean
         message: "no internet" | "operation successful" | "misc error" | "operation unsuccessful"
         error?: Error
         operationType: "create" | "update" | "remove" | ""
-        contentType : "project" | "tags" | "entry" | "user"
+        contentType : "project" | "tags" | "entry" | "account" | "settings"
+        customResponse: string
     }
+
+    export interface APIAccountOperationResponse extends APIOperationResponse {
+        accountOperation: "change password" | "delete account" | "upgrade" | "downgrade" | "create account" | "verify email" | "login"
+        userId?: string
+    }
+
+    
+    export type APIDeleteAccount = {
+    
+        user: string
+        password: string
+    
+    }
+    
+    export type APIUpdatePassword = {
+
+        userId: string
+        oldPassword: string
+        newPassword: string
+    
+    }
+    
+    export type APICreateAccount = {
+    
+        username: string
+        password: string
+        email: string
+    
+    }
+    
+    export type APIUpgradeUser = {
+    
+    }
+    
+    export type APIDowngradeUser = {
+    
+    }
+
+    export type APILoginUser = {
+
+        loginSuccess: boolean;
+        username: string;
+        identifierType: "" | "email" | "username";
+        password: string;
+    
+    }
+
+
+    export type APITranslateCall = {
+
+        targetText: string, 
+        targetLanguage: string,
+        outputLanguage: string,
+        username: string
+    }
+    
+    export type APITranslateResponse = {
+    
+        success: boolean
+        translations: any[]
+        translationsLeft: number
+        translationRefreshTime: number
+        message: "no internet" | "operation successful" | "misc error" | "operation unsuccessful"
+    
+    }
+
+    export type TranslationsLeft ={
+        translationsLeft: number
+        translationRefreshTime: number
+    }
+
+    //Generic API Request
+export type APIRequest = {
+
+    requestType: "account" | "settings" | "project" | "entry" | "translate" | "tags"
+    requestDetails: APIEntryObject | APIProjectObject | APITranslateCall | APIAccountObject<AccountOperationDetails> | APISettingsObject
+
+}
 
 

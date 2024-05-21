@@ -7,12 +7,12 @@ declare class UsersDatabase extends vpModel {
         pass: string;
     }): Promise<appTypes.DBResponseObject<appTypes.DBMatchResponseConfig>>;
     static loginUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>;
-    static createNewUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBAddUserResponseObject<appTypes.DBAddUserResponseConfig>>;
-    static deleteUser(userCredentials: appTypes.UserCredentials): Promise<unknown>;
-    static updatePassword(userCredentials: appTypes.UserCredentials, newPassword: string): Promise<appTypes.DBUpdatePasswordResponseObject<appTypes.DBUpdatePasswordResponseConfig>>;
-    static saveEmailVerification(token: string, email: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>;
-    static checkEmailVerification(token: string): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>;
-    static deleteEmailVerification(token: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>;
-    static updateVerification(email: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>;
+    static createNewUser(userCredentials: appTypes.APICreateAccount, deviceCredentials: any): Promise<appTypes.APIAccountOperationResponse>;
+    static deleteUser(userCredentials: appTypes.APIDeleteAccount): Promise<appTypes.APIAccountOperationResponse>;
+    static updatePassword(accountObject: appTypes.APIUpdatePassword): Promise<appTypes.APIAccountOperationResponse>;
+    static saveEmailVerification(token: string, email: string): Promise<appTypes.APIAccountOperationResponse>;
+    static checkEmailVerification: (token: string) => Promise<appTypes.dbMatchResponse>;
+    static deleteEmailVerification: (token: string) => Promise<appTypes.APIAccountOperationResponse>;
+    static updateVerification: (email: string) => Promise<appTypes.APIAccountOperationResponse>;
 }
 export default UsersDatabase;

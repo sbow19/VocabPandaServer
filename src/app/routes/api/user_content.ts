@@ -1,4 +1,3 @@
-const {v4: uuidv4 } = require('uuid');
 const express = require('express');
 import UsersContentDatabase from '@shared/models/user_content/user_content_db'; 
 import * as appTypes from '@appTypes/appTypes'
@@ -14,30 +13,32 @@ usersContentRouter.post("/newproject", async(req, res)=>{
     
     try{
 
-        const newProjectDetails: appTypes.NewProjectDetails = req.body.newProject;
+        const newProjectDetails: appTypes.ProjectDetails = req.body;
 
-        const addProjectResponse = await UsersContentDatabase.addNewProject(newProjectDetails, req.body.userName);
+        const addProjectResponse = await UsersContentDatabase.addNewProject(newProjectDetails);
 
         res.status(200).send(addProjectResponse);
 
-    }catch(e){
+    }catch(addProjectResponse){
 
-        res.send(e);
+        res.status(500).send(addProjectResponse);
 
     }
 })
 
-usersContentRouter.delete("/deleteproject", async(req, res)=>{
+usersContentRouter.post("/deleteproject", async(req, res)=>{
 
     
     try{
 
-        const deleteProjectResponse = await UsersContentDatabase.deleteProject(req.body.projectName, req.body.userName);
+        const deleteProjectDetails: appTypes.ProjectDetails = req.body;
 
-        res.status(200).send(deleteProjectResponse)
-    }catch(e){
+        const deleteProjectResponse = await UsersContentDatabase.deleteProject(deleteProjectDetails);
 
-        res.send(e);
+        res.status(200).send(deleteProjectResponse);
+    }catch(deleteProjectResponse){
+
+        res.status(500).send(deleteProjectResponse);
 
     }
 })
@@ -46,7 +47,7 @@ usersContentRouter.post("/addentry", async(req, res)=>{
 
     try{
 
-        const APIEntryObject: appTypes.EntryDetails = req.body
+        const APIEntryObject: appTypes.EntryDetails = req.body;
 
         const addEntryResponse = await UsersContentDatabase.addNewEntry(
             APIEntryObject
@@ -72,8 +73,8 @@ usersContentRouter.post("/updateentry", async(req, res)=>{
 
         res.status(200).send(updateEntryResponse);
 
-    }catch(e){
-        res.send(e);
+    }catch(updateEntryResponse){
+        res.status(500).send(updateEntryResponse);
     }
 
 })
@@ -83,14 +84,16 @@ usersContentRouter.post("/deleteentry", async(req, res)=>{
 
     try{
 
+        const {entryId} = req.body
+
         const deleteEntryResponse = await UsersContentDatabase.deleteEntry(
-            req.body.entryId
+            entryId
         );
 
         res.status(200).send(deleteEntryResponse);
 
-    }catch(e){
-        res.send(e);
+    }catch(deleteEntryResponse){
+        res.status(500).send(deleteEntryResponse)
     }
 
 })

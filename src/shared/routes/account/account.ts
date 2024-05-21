@@ -20,7 +20,9 @@ AccountRouter.get("/createaccount/verify", async(req, res)=>{
     try{
 
         if(!req.query.token){
+            
             res.status(401).send("Invalid verification token provided or token expired");
+
         } else if (req.query.token){
 
             const result = await VocabPandaEmail.checkToken(req.query.token);
@@ -44,23 +46,15 @@ AccountRouter.use(authoriseRequest);
 //Create account
 AccountRouter.post("/createaccount", async(req, res)=>{
 
-    let userCreds: appTypes.UserCredentials;
+    let userCreds: appTypes.APICreateAccount = req.body;
+    let deviceCreds = {};
     let hashedPassword;
 
     //get deviceid and API key
     const credentials = basicAuth(req);
 
-    const APIKey = credentials.pass;
+    deviceCreds = credentials;
 
-    console.log(req.body)
-
-
-    const APIResponseObject: appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig> = {
-
-        addMessage: "",
-        responseMessage: "Add unsuccessful",
-        userId: ""
-    }
     
     try {
         const salt = await bycrypt.genSalt();
@@ -82,61 +76,53 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 
     try {
 
-        const dbAddUserResponseObject = await UsersDatabase.createNewUser(userCreds); //Add new user to user_logins db. Verification checks undertaken within function.
+        const addUserResponse = await UsersDatabase.createNewUser(userCreds, deviceCreds); //Add new user to user_logins db. Verification checks undertaken within function.
 
-        if (dbAddUserResponseObject.responseMessage === "New user could not be added"){
+        if (!addUserResponse.success){
 
-            const addNewUserError = new Error("New user could not be added.", {
-                cause: dbAddUserResponseObject.addMessage
-            });
-
-            throw addNewUserError;
+            throw addUserResponse;
         };
+
+        //Then we can move onto adding the users details.
+
+        await UserDetailsDatabase.addNewUserDetails(userCreds, addUserResponse.userId); //Create new user returns  user id in .add.message property
+
 
         //Send email verification link to email provided by user -- If cannot send due to network error, then we don't move to saving the details in the database
 
         await VocabPandaEmail.sendVerificationEmail(req.body.email);
 
-        //Then we can move onto adding the users details.
-
-        await UserDetailsDatabase.addNewUserDetails(userCreds, dbAddUserResponseObject.addMessage); //Create new user returns  user id in .add.message property
-
         //Configure API response object 
 
-        APIResponseObject.addMessage = "User added successfully!";
-        APIResponseObject.responseMessage = "Add successful";
-        APIResponseObject.userId = dbAddUserResponseObject.addMessage;
-
-        res.status(200).send(APIResponseObject);
+        res.status(200).send(addUserResponse);
     
-    } catch(e){
+    }catch(e){
 
-        APIResponseObject.addMessage = e;
-        APIResponseObject.responseMessage = "Add unsuccessful"
+        if(e.customResponse === "user exists"){
 
-        //Error object sent to front end 
-        res.status(200).send(APIResponseObject);
+            res.status(500).send(e);
 
-        if(e.message === "nodemail"){
 
-            console.log("error message here")
+        } else {
 
-            //If nodemail fails to send a response, then we delete the user just crated
+            //If some other error apart from user existing
+            res.status(500).send(e);
 
             try{
                 const deleteResponseObject = await UsersDatabase.deleteUser({
-                    username: userCreds.username,
+                    userId: userCreds.username,
                     password: req.body.password,
-                    identifierType: "username"
                 });
 
                 console.log(deleteResponseObject)
 
             }catch(e){
-                console.log(e)
+                console.log(e, "Create account operation")
             }
-            
+
         }
+
+        
         
     } 
     
@@ -147,42 +133,37 @@ AccountRouter.post("/createaccount", async(req, res)=>{
 
 //TODO trigger payment cancellation logic here
 
-AccountRouter.delete("/deleteaccount", async(req, res)=>{
+AccountRouter.post("/deleteaccount", async(req, res)=>{
 
     //verify credentials
 
     try{
-        const dbResponseObject =  await UsersDatabase.deleteUser({
-            userName: req.body.userName,
-            password: req.body.password,
-            identifierType: "username"
-        });
+
+        const userCredentials: appTypes.APIDeleteAccount = req.body;  
+
+        const accountDeletionResponse =  await UsersDatabase.deleteUser(userCredentials);
     
-        res.status(200).send(dbResponseObject);
-    } catch(e){
-        res.status(500).send();
+        res.status(200).send(accountDeletionResponse);
+    } catch(accountDeletionResponse){
+        res.status(500).send(accountDeletionResponse);
     }
 });
 
 
 //Update password
 
-AccountRouter.put("/updatepassword", async(req, res)=>{
+AccountRouter.post("/updatepassword", async(req, res)=>{
+
+    const accountDetails: appTypes.APIUpdatePassword = req.body;
 
     try{
-        const salt = await bycrypt.genSalt();
-        const hashedPassword = await bycrypt.hash(req.body.newPassword, salt);
 
-        const dbResponseObject =  await UsersDatabase.updatePassword({
-            userName: req.body.userName,
-            password: req.body.password,
-            identifierType: "username"
-        },
-        hashedPassword);
+
+        const dbResponseObject =  await UsersDatabase.updatePassword(accountDetails);
     
         res.status(200).send(dbResponseObject);
-    } catch(e){
-        res.status(500).send();
+    } catch(dbResponseObject){
+        res.status(500).send(dbResponseObject);
     }
 });
 

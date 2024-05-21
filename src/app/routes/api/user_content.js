@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const { v4: uuidv4 } = require('uuid');
 const express = require('express');
 const user_content_db_1 = __importDefault(require("@shared/models/user_content/user_content_db"));
 const authoriseRequest = require("@shared/misc/authorisation");
@@ -12,48 +11,52 @@ usersContentRouter.use(express.json());
 usersContentRouter.use(authoriseRequest);
 usersContentRouter.post("/newproject", async (req, res) => {
     try {
-        const newProjectDetails = req.body.newProject;
-        const addProjectResponse = await user_content_db_1.default.addNewProject(newProjectDetails, req.body.userName);
+        const newProjectDetails = req.body;
+        const addProjectResponse = await user_content_db_1.default.addNewProject(newProjectDetails);
         res.status(200).send(addProjectResponse);
     }
-    catch (e) {
-        res.send(e);
+    catch (addProjectResponse) {
+        res.status(500).send(addProjectResponse);
     }
 });
-usersContentRouter.delete("/deleteproject", async (req, res) => {
+usersContentRouter.post("/deleteproject", async (req, res) => {
     try {
-        const deleteProjectResponse = await user_content_db_1.default.deleteProject(req.body.projectName, req.body.userName);
+        const deleteProjectDetails = req.body;
+        const deleteProjectResponse = await user_content_db_1.default.deleteProject(deleteProjectDetails);
         res.status(200).send(deleteProjectResponse);
     }
-    catch (e) {
-        res.send(e);
+    catch (deleteProjectResponse) {
+        res.status(500).send(deleteProjectResponse);
     }
 });
 usersContentRouter.post("/addentry", async (req, res) => {
     try {
-        const addEntryResponse = await user_content_db_1.default.addNewEntry(req.body.newEntryDetails, req.body.userName);
+        const APIEntryObject = req.body;
+        const addEntryResponse = await user_content_db_1.default.addNewEntry(APIEntryObject);
         res.status(200).send(addEntryResponse);
     }
-    catch (e) {
-        res.send(e);
+    catch (addEntryResponse) {
+        res.status(500).send(addEntryResponse);
     }
 });
-usersContentRouter.put("/updateentry", async (req, res) => {
+usersContentRouter.post("/updateentry", async (req, res) => {
     try {
-        const updateEntryResponse = await user_content_db_1.default.updateEntry(req.body.updateDetails, req.body.entryId);
+        const EntryObject = req.body;
+        const updateEntryResponse = await user_content_db_1.default.updateEntry(EntryObject);
         res.status(200).send(updateEntryResponse);
     }
-    catch (e) {
-        res.send(e);
+    catch (updateEntryResponse) {
+        res.status(500).send(updateEntryResponse);
     }
 });
-usersContentRouter.delete("/deleteentry", async (req, res) => {
+usersContentRouter.post("/deleteentry", async (req, res) => {
     try {
-        const deleteEntryResponse = await user_content_db_1.default.deleteEntry(req.body.entryId);
+        const { entryId } = req.body;
+        const deleteEntryResponse = await user_content_db_1.default.deleteEntry(entryId);
         res.status(200).send(deleteEntryResponse);
     }
-    catch (e) {
-        res.send(e);
+    catch (deleteEntryResponse) {
+        res.status(500).send(deleteEntryResponse);
     }
 });
 usersContentRouter.post("/addtag", async (req, res) => {
@@ -65,7 +68,7 @@ usersContentRouter.post("/addtag", async (req, res) => {
         res.send(e);
     }
 });
-usersContentRouter.delete("/deletetag", async (req, res) => {
+usersContentRouter.post("/deletetag", async (req, res) => {
     try {
         const deleteTagResponse = await user_content_db_1.default.deleteTag(req.body.tagId);
         res.status(200).send(deleteTagResponse);

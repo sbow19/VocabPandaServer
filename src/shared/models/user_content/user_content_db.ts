@@ -8,23 +8,20 @@ import preparedSQLStatements from "../prepared_statements";
 
 class UsersContentDatabase extends vpModel {
 
-    static addNewProject(newProjectDetails: appTypes.NewProjectDetails, username: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>{
+    static addNewProject = (newProjectDetails: appTypes.ProjectDetails): Promise<appTypes.APIOperationResponse> =>{
     
         return new Promise(async(resolve, reject)=>{
 
-            const dbAddResponseObject: appTypes.EntryAPIResponse = {
+            const projectAddResponseObject: appTypes.APIOperationResponse = {
 
-                responseMessage: "Add unsuccessful",
-                addMessage: "",
-                addType: "project"
+                message: "operation unsuccessful",
+                operationType: "create",
+                contentType: "project",
+                success: false
             };
 
-            try{
 
-                //get user id 
-                const {matchMessage} = await super.getUserId(username);
-                
-                const userId = matchMessage;
+            try{
 
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
@@ -36,28 +33,22 @@ class UsersContentDatabase extends vpModel {
 
                     await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
 
-                    //Add new user details
-
-                    const addProjectSqlQuery =  `INSERT INTO projects VALUES (?, ?, ?, ?);` //user_id, project, target_lang, output_lang
-
                     await dbResponseObject.mysqlConnection?.query(
-                        addProjectSqlQuery,
+                        preparedSQLStatements.projectStatements.addNewProject,
                         [
-                            userId,
+                            newProjectDetails.userId,
                             newProjectDetails.projectName,
-                            newProjectDetails.target_lang,
-                            newProjectDetails.output_lang
+                            newProjectDetails.targetLanguage,
+                            newProjectDetails.outputLanguage
                             
                         ])
 
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
 
-                    dbAddResponseObject.responseMessage = "Add successful";
-                    dbAddResponseObject.responseCode = 0;
-                    dbAddResponseObject.addMessage = "New project added successfully"
-                    dbAddResponseObject.addType = "project"
+                    projectAddResponseObject.message = "operation successful";
+                    projectAddResponseObject.success = true;
 
-                    resolve(dbAddResponseObject)
+                    resolve(projectAddResponseObject)
 
                 }catch(e){
                     throw e
@@ -66,31 +57,28 @@ class UsersContentDatabase extends vpModel {
                 }
         
             }catch(e){
-                reject({e, dbAddResponseObject});
+
+                console.log(e);
+                projectAddResponseObject.error = e;
+                reject(projectAddResponseObject);
             }
 
         })
     }
 
-    static deleteProject(projectName: string, username: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>{
+    static deleteProject = (deleteProjectDetails: appTypes.ProjectDetails): Promise<appTypes.APIOperationResponse> =>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbDeleteResponseObject: appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig> = {
+            const projectDeleteResponse: appTypes.APIOperationResponse = {
 
-                responseCode: 0,
-                responseMessage: "Delete unsuccessful",
-                deleteMessage: "",
-                deleteType: "project"
+                success: false,
+                message: "operation unsuccessful",
+                operationType: "remove",
+                contentType: "project"
             };
 
             try{
-
-                //get user id 
-
-                const {matchMessage} = await super.getUserId(username);
-                
-                const userId = matchMessage;
 
                 //Get db connection
 
@@ -100,39 +88,29 @@ class UsersContentDatabase extends vpModel {
                     //Begin transaction
                     await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
 
-                    //Add new user details
-                    const addProjectSqlQuery =
+                   
 
-                    `DELETE FROM projects WHERE
-                        user_id = ?
-                    AND 
-                        project =?
-                    ;` 
-
-                    let [queryResponse] = await dbResponseObject.mysqlConnection?.query(
-                        addProjectSqlQuery,
+                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.projectStatements.deleteProject,
                         [
-                            userId,
-                            projectName
+                            deleteProjectDetails.userId,
+                            deleteProjectDetails.projectName
                         ])
                     
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
                     if(queryResponse.affectedRows===0){
 
-                        dbDeleteResponseObject.deleteMessage = "No rows affected"
+                        projectDeleteResponse.message = "operation unsuccessful";
 
-                        reject(dbDeleteResponseObject);
-                        return
+                        reject(projectDeleteResponse);
 
-                    } else if (queryResponse.affectedRows>0){
+                    } else if (queryResponse.affectedRows > 0){
 
-                        dbDeleteResponseObject.responseMessage = "Delete successful";
-                        dbDeleteResponseObject.responseCode = 0;
-                        dbDeleteResponseObject.deleteMessage = "Project deleted successfully"
-                        dbDeleteResponseObject.deleteType = "project"
+                        projectDeleteResponse.message ="operation successful";
+                        projectDeleteResponse.success = true;
 
-                        resolve(dbDeleteResponseObject)
+                        resolve(projectDeleteResponse)
                     }
 
                 }catch(e){
@@ -142,19 +120,20 @@ class UsersContentDatabase extends vpModel {
                 }
 
             }catch(e){
-
-                reject({e, dbDeleteResponseObject});
+                console.log(e, "delete project error")
+                projectDeleteResponse.message = "operation unsuccessful"
+                reject(projectDeleteResponse);
 
             }
 
         })
     }
 
-    static addNewEntry(newEntryObject: appTypes.EntryDetails): Promise<appTypes.APIEntryResponse>{
+    static addNewEntry = (newEntryObject: appTypes.EntryDetails): Promise<appTypes.APIOperationResponse>=>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const addEntryResponseObject: appTypes.APIEntryResponse={
+            const addEntryResponseObject: appTypes.APIOperationResponse={
 
                 message: "operation unsuccessful",
                 success: false,
@@ -218,6 +197,7 @@ class UsersContentDatabase extends vpModel {
             
 
                 }catch(e){
+                    console.log(e);
                     throw e
                 }finally{
 
@@ -234,11 +214,11 @@ class UsersContentDatabase extends vpModel {
         })
     }
 
-    static updateEntry(updateEntryObject: appTypes.EntryDetails): Promise<appTypes.APIEntryResponse>{
+    static updateEntry = (updateEntryObject: appTypes.EntryDetails): Promise<appTypes.APIOperationResponse>=>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const updateEntryResponseObject: appTypes.APIEntryResponse={
+            const updateEntryResponseObject: appTypes.APIOperationResponse={
 
                 message: "operation unsuccessful",
                 success: false,
@@ -265,8 +245,10 @@ class UsersContentDatabase extends vpModel {
                             updateEntryObject.outputLanguageText,
                             updateEntryObject.outputLanguage,
                             updateEntryObject.tags,
-                            updateEntryObject.createdAt
-                        ])
+                            updateEntryObject.updatedAt,
+                            updateEntryObject.entryId
+                        ]
+                    )
 
 
                     //update tags query
@@ -315,11 +297,11 @@ class UsersContentDatabase extends vpModel {
         })
     }
 
-    static deleteEntry(entryId: string): Promise<appTypes.APIEntryResponse>{
+    static deleteEntry = (entryId: string): Promise<appTypes.APIOperationResponse> =>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const deleteEntryResponseObject: appTypes.APIEntryResponse={
+            const deleteEntryResponse: appTypes.APIOperationResponse={
 
                 message: "operation unsuccessful",
                 success: false,
@@ -343,18 +325,23 @@ class UsersContentDatabase extends vpModel {
 
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
 
-                    if(queryResponse.affectedRows === 0){
 
-                        deleteEntryResponseObject.message = "operation unsuccessful"
+                    if(queryResponse.affectedRows===0){
 
-                        throw(deleteEntryResponseObject);
+                        deleteEntryResponse.message = "operation unsuccessful";
 
-                    } else if (queryResponse.affectedRows>0){
+                        reject(deleteEntryResponse);
 
-                        deleteEntryResponseObject.message ="operation successful"
+                    } else if (queryResponse.affectedRows > 0){
 
-                        resolve(deleteEntryResponseObject)
+                        deleteEntryResponse.message ="operation successful";
+                        deleteEntryResponse.success = true;
+
+                        resolve(deleteEntryResponse)
                     }
+
+                    resolve(deleteEntryResponse)
+                    
 
                 }catch(e){
                     throw e
@@ -363,13 +350,14 @@ class UsersContentDatabase extends vpModel {
                     UserContentDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
             }catch(e){
-                deleteEntryResponseObject.error = e;
-                reject(deleteEntryResponseObject);
+                console.log(e, "delete entry error")
+                deleteEntryResponse.error = e;
+                reject(deleteEntryResponse);
             }
         })
     }
 
-    static addTag(tagName: string, username: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>>{
+    static addTag = (tagName: string, username: string): Promise<appTypes.DBAddResponseObject<appTypes.DBAddResponseConfig>> =>{
 
         return new Promise(async(resolve, reject)=>{
 
@@ -440,7 +428,7 @@ class UsersContentDatabase extends vpModel {
         })
     }
 
-    static deleteTag(tagId: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>{
+    static deleteTag = (tagId: string): Promise<appTypes.DBDeleteResponseObject<appTypes.DBDeleteResponseConfig>>=>{
 
         return new Promise(async(resolve, reject)=>{
 
@@ -498,32 +486,7 @@ class UsersContentDatabase extends vpModel {
         })
     }
 
-    static requestTranslation(userRequest:appTypes.userRequest, username: string): Promise<appTypes.TranslationResponseObject<appTypes.TranslationResponseConfig>>{
-        return new Promise(async (resolve, reject)=>{
-
-            const translationResponseObject: appTypes.TranslationResponseObject<appTypes.TranslationResponseConfig> = {
-                responseCode: 0,
-                responseMessage: "Translation unsuccessful",
-                translationMessage: ""
-            }
-
-            try{
-
-                //get user id 
-
-                const {matchMessage} = await super.getUserId(username);
-                
-                const userId = matchMessage;
-
-            }catch(e){
-
-            }
-
-
-
-
-        })
-    }
+   
 }
 
 export default UsersContentDatabase;

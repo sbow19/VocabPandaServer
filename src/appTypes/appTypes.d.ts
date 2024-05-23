@@ -1,3 +1,4 @@
+import { extend } from "dayjs"
 import * as mysql from "mysql2"
 
 
@@ -9,12 +10,6 @@ import * as mysql from "mysql2"
         apiKey?: string,
 
         identifierType?: "email" | "username"
-    }
-
-    export type userRequest = {
-        target_text: string
-        target_text_lang: string
-        output_lang: string
     }
 
     //Response template for database searches
@@ -184,7 +179,6 @@ deleteType: "project" | "entry" | "tag"
 
     export type APIKeysTableColumns = "api_key"
 
-
     export type UsersLoginsDB = {
         mysqlConnection: mysql.Connection
         tables: "users" | "api_keys" | "verification"
@@ -202,10 +196,19 @@ deleteType: "project" | "entry" | "tag"
     }
 
 
-    //User content posts
+    //API 
 
-    export type ProjectDetails = {
+    /* User API call content */
+    export type APICallBase = {
 
+        deviceType: "app" | "extension"
+        operationType: "project" | "tags" | "entry" | "account" | "settings"
+
+    }
+
+    export interface ProjectDetails extends APICallBase {
+
+        //Creating or removing a project
         projectName: string
         targetLanguage: string
         outputLanguage: string
@@ -213,7 +216,9 @@ deleteType: "project" | "entry" | "tag"
 
     }
 
-    export type EntryDetails = {
+    export interface EntryDetails extends APICallBase {
+
+        //Adding or editing an entry 
         targetLanguageText: string
         targetLanguage: string
         outputLanguageText: string
@@ -228,8 +233,9 @@ deleteType: "project" | "entry" | "tag"
         entryId: string
     }
 
-    //User settings object
-    export type UserSettings = {
+    export interface UserSettings extends APICallBase {
+
+        //Setting user settings
         gameTimerOn: boolean
         gameNoOfTurns: number
         defaultTargetLanguage: string
@@ -238,54 +244,26 @@ deleteType: "project" | "entry" | "tag"
         userId: string
     }
 
-    export type refreshErrorResponse ={
+    export interface APITranslateCall extends APICallBase {
 
-        responseMessage: "Refresh complete" | "Refresh unsuccessful"
-        info: string
-
+        //COntent to translate
+        targetText: string, 
+        targetLanguage: string,
+        outputLanguage: string,
+        username: string
+        userId: string
     }
 
-    //User verification
+    /* Account-related API calls */
 
-    export type EmailVerificationResponse = {
-
-        responseMessage: "Check complete" | "Check unsuccessful"
-        info: string
-        errorMessage?: Error | null
-    }
-
-
-    //API related
-
-    /*
-        API responses relate to responses of operations that occur on the backend. API objects 
-        also relate to information passed from the front end to the backend.These much match the
-        type definitions defined for the frontend.
-    */
-
-    export type APIOperationResponse = {
-        success: Boolean
-        message: "no internet" | "operation successful" | "misc error" | "operation unsuccessful"
-        error?: Error
-        operationType: "create" | "update" | "remove" | ""
-        contentType : "project" | "tags" | "entry" | "account" | "settings"
-        customResponse: string
-    }
-
-    export interface APIAccountOperationResponse extends APIOperationResponse {
-        accountOperation: "change password" | "delete account" | "upgrade" | "downgrade" | "create account" | "verify email" | "login"
-        userId?: string
-    }
-
-    
-    export type APIDeleteAccount = {
+    export interface APIDeleteAccount extends APICallBase {
     
         user: string
         password: string
     
     }
     
-    export type APIUpdatePassword = {
+    export interface APIUpdatePassword extends APICallBase {
 
         userId: string
         oldPassword: string
@@ -293,7 +271,7 @@ deleteType: "project" | "entry" | "tag"
     
     }
     
-    export type APICreateAccount = {
+    export interface APICreateAccount extends APICallBase {
     
         username: string
         password: string
@@ -309,26 +287,53 @@ deleteType: "project" | "entry" | "tag"
     
     }
 
-    export type APILoginUser = {
+    export interface APILoginResult extends APICallBase {
 
         loginSuccess: boolean;
         username: string;
         identifierType: "" | "email" | "username";
-        password: string;
+        password: string
+        userId: string
     
     }
 
-
-    export type APITranslateCall = {
-
-        targetText: string, 
-        targetLanguage: string,
-        outputLanguage: string,
-        username: string
-    }
     
+    /* Plays */
+
+    export interface PlaysDetails extends APICallBase {
+
+        playsLeft: string
+        playsRefreshTime: string
+        userId: string
+    
+    }
+
+    /* API operation responses to front end*/
+    export type APIOperationResponse<T = null> = {
+        //Generic response for call API operations
+        success: Boolean
+        message: "no internet" | "operation successful" | "misc error" | "operation unsuccessful"
+        error?: Error
+        operationType: "create" | "update" | "remove" | "get"
+        contentType : "project" | "tags" | "entry" | "account" | "settings" | "buffer"
+        customResponse?: T
+    }
+
+    export interface APIAccountOperationResponse<T = null> extends APIOperationResponse<T>  {
+        //Generic response for all account related API operations
+        accountOperation: "change password" | "delete account" | "upgrade" | "downgrade" | "create account" | "verify email" | "login" 
+        userId?: string
+    }
+
+    export interface APIKeyOperationResponse<T = null> extends APIOperationResponse<T> {
+
+        apiOperationType: "generate api key"
+        APIKey: string
+
+    }
+
     export type APITranslateResponse = {
-    
+        //Specifically for translation calls
         success: boolean
         translations: any[]
         translationsLeft: number
@@ -337,17 +342,65 @@ deleteType: "project" | "entry" | "tag"
     
     }
 
+    export type APIPostLoginSetUp = {
+        //When user logs in, front end is updated with any changes that have occurred with the account elsewhere
+        userId: string
+        userSettings: UserSettings
+        userPremiumStatus: boolean
+        userDeleted:  {
+            userId: string
+            valid: boolean
+        }
+        userContent: [] //Chronological list of user entry and project operations
+    }
+
+    export type APIGenerateKeyRequest = {
+        deviceType: "app" | "extension"
+        deviceId: string
+    }
+
+
+    export type refreshErrorResponse ={
+
+        responseMessage: "Refresh complete" | "Refresh unsuccessful"
+        info: string
+
+    }
+
+    export type EmailVerificationResponse = {
+
+        responseMessage: "Check complete" | "Check unsuccessful"
+        info: string
+        errorMessage?: Error | null
+    }
+
+
     export type TranslationsLeft ={
         translationsLeft: number
         translationRefreshTime: number
     }
 
     //Generic API Request
-export type APIRequest = {
 
-    requestType: "account" | "settings" | "project" | "entry" | "translate" | "tags"
-    requestDetails: APIEntryObject | APIProjectObject | APITranslateCall | APIAccountObject<AccountOperationDetails> | APISettingsObject
 
-}
+    //BUFFER INFORMATION
+
+    export type UserDeviceCreds = {
+        userId: string
+        deviceType: "app" | "extension"
+    }
+
+    export interface BufferOperationResponse<T = null> extends APIOperationResponse<T> {
+
+    }
+
+    /* Entries from backend extension buffer */
+    export type UserContentExtensionBuffer = {
+        operationType: "add" | "update" | "get" | "delete"
+        contentType: "tags" | "entry" | "project"
+        userContent: EntryDetails | ProjectDetails
+    }
+
+
 
 

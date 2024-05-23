@@ -1,12 +1,14 @@
 import * as mysqlTypes from "mysql2"
 const {v4: uuidv4} = require('uuid');
 import * as appTypes from "@appTypes/appTypes"
+import preparedSQLStatements from "./prepared_statements";
 const mysql = require("mysql2/promise");
 const strftime = require("strftime");
 const dayjs = require("dayjs");
 const UserDBPool = require("./user_logins/users_db_pool");
 const UserDetailsDBPool = require("./user_details/user_details_pool");
 const UserContentDBPool = require("./user_content/user_content_pool");
+const UserBuffersDBPool = require("./user_content/user_buffers_pool");
 
 class vpModel {
     constructor(){
@@ -161,6 +163,37 @@ class vpModel {
 
     };
 
+    static getUsersBuffersDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+
+        return new Promise(async(resolve, reject)=>{
+
+            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
+                responseCode: 0,
+                responseMessage: "Connection successful",
+                mysqlConnection: null
+            }
+
+            try{
+
+                const databaseConnection: mysqlTypes.Connection = await UserBuffersDBPool.getConnection();
+
+                dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.responseMessage = "Connection successful"
+                console.log("connection to user db was successful")
+
+                resolve(dbResponseObject)
+
+            } catch (e) {
+
+                dbResponseObject.responseMessage = "Connection unsuccessful"
+                console.log("connection to user db was unsuccessful")
+
+                reject (dbResponseObject)
+            }
+        })
+
+    };
+
     static getUserId(username: string): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>>{
 
         return new Promise(async(resolve, reject)=>{
@@ -216,6 +249,58 @@ class vpModel {
                 console.log(e);
                 console.log(console.trace());
                 reject(DBMatchResponseObject);
+
+            }
+    })
+    }
+
+    static userExists(userId: string): Promise<appTypes.dbMatchResponse>{
+        //Check whether user exists
+
+        return new Promise(async(resolve, reject)=>{
+
+            const userMatchResponse: appTypes.dbMatchResponse = {
+                match: false
+            }
+
+            try{
+
+                const usersDBResponseObject = await this.getUsersDBConnection(); //Gets pool connection
+
+                try{
+                //Attempt sql queries
+                    const [databaseResult] = await usersDBResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.generalStatements.userIdMatch,
+                        [
+                            userId,
+                            userId
+                        ]
+                    );
+
+                    if(databaseResult.length === 0){
+                        //No user exists with this user id
+                        resolve(userMatchResponse)
+                    }else if (databaseResult === 1){
+                        //User exists
+                        userMatchResponse.match = true;
+                        userMatchResponse.matchTerm = databaseResult
+
+                        resolve(userMatchResponse);
+                    }
+                    
+                }catch(e){
+                    throw e
+                }finally{
+                    //Release connection regardless of search outcome
+                    UserDBPool.releaseConnection(usersDBResponseObject.mysqlConnection);
+                };
+
+            }catch(e){
+
+                //Other misc error.  Careful not to return boolean
+                console.log(e);
+                console.log(console.trace());
+                reject(e);
 
             }
     })

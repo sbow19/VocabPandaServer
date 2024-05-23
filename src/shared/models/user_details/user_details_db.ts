@@ -153,6 +153,72 @@ class UserDetailsDatabase extends vpModel {
         })
     }
 
+    static getUserSettings = (userId: string): Promise<appTypes.APIOperationResponse<appTypes.UserSettings>>=>{
+        return new Promise(async(resolve, reject)=>{
+
+            const fetchResult: appTypes.APIOperationResponse<appTypes.UserSettings> = {
+                operationType: "get",
+                message: "operation unsuccessful",
+                success: false,
+                contentType: "settings"
+            }
+
+            try{
+
+                //Get db connection
+
+                const dbResponseObject = await super.getUsersDetailsDBConnection();
+
+                try{
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+
+                   
+                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.settingsStatements.getUserSettings,
+                        [
+                            userId
+                        ]
+                    )
+                    
+                    await dbResponseObject.mysqlConnection?.commit(); 
+                    
+                    if(queryResponse.affectedRows === 0){
+                        //No user settings identified for this user
+
+                        fetchResult.message = "operation unsuccessful";
+                        reject(fetchResult);
+
+                    } else if (queryResponse.affectedRows === 1){
+
+                        const userSettings = queryResponse[0];
+
+                        fetchResult.message ="operation successful";
+                        fetchResult.success = true;
+                        fetchResult.customResponse?.defaultOutputLanguage = userSettings["output_lang"];
+                        fetchResult.customResponse?.defaultProject = userSettings["default_project"];
+                        fetchResult.customResponse?.defaultTargetLanguage = userSettings["target_lang"];
+                        fetchResult.customResponse?.gameNoOfTurns = userSettings["slider_val"];
+                        fetchResult.customResponse?.gameTimerOn = userSettings["timer_on"]; 
+
+                        resolve(fetchResult)
+                    }
+
+                }catch(e){
+                    throw e
+                }finally{
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
+
+            }catch(e){
+                console.log(e, "Fetch user settings error")
+                fetchResult.message = "operation unsuccessful"
+                reject(fetchResult);
+
+            }
+        })
+    }
+
 
     //Ugrade user to premium
     
@@ -341,8 +407,73 @@ class UserDetailsDatabase extends vpModel {
         })
     }
 
-    //Update last logged in
+    //Get user premium status
+    static checkPremiumStatus = (userId: string): Promise<boolean> =>{
+        return new Promise(async(resolve, reject)=>{
 
+            const fetchResult: appTypes.APIOperationResponse<boolean> = {
+                success: false,
+                message: "operation unsuccessful",
+                contentType: "account",
+                operationType: "get",
+                customResponse: false
+            }
+
+            try{
+
+                //Get db connection
+                const dbResponseObject = await super.getUsersDetailsDBConnection();
+
+                try{
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+
+                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                        preparedSQLStatements.accountStatements.checkPremiumStatus,
+                        [
+                            userId
+                        ])
+                    
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    
+                    if(queryResponse.affectedRows === 0){
+                        //No user found 
+                        reject(fetchResult);
+
+                    } else if (queryResponse.affectedRows > 0){
+                        //User found
+
+                        let premium: boolean;
+                        if(queryResponse[0].premium === 1){
+                            premium = true;
+                        }else if(queryResponse[0].premium === 0){
+                            premium = false
+                        }
+
+                        fetchResult.message ="operation successful";
+                        fetchResult.success = true;
+                        fetchResult.customResponse = premium;
+
+                        resolve(premium);
+                    }
+
+                }catch(e){
+                    throw e
+                }finally{
+                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
+
+            }catch(e){
+                console.log(e, "update user settings error")
+                fetchResult.message = "operation unsuccessful"
+                reject(fetchResult);
+
+            }
+
+        })
+    }
+
+    //Update last logged in
     static updateLastLoggedIn(username: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>{
         return new Promise(async(resolve, reject)=>{
 
@@ -565,7 +696,6 @@ class UserDetailsDatabase extends vpModel {
 
 
     //Subtract translations left
-
     static updateTranslationsLeft(username: string): Promise<appTypes.TranslationsLeft>{
         return new Promise(async (resolve, reject)=>{
 

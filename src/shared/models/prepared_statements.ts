@@ -31,6 +31,7 @@ const preparedSQLStatements = {
             output_lang = ?,
             default_project = ?
         WHERE (user_id = ?);`,
+        getUserSettings: `SELECT * FROM user_settings WHERE user_id = ?;`
     },
 
     accountStatements: {
@@ -65,7 +66,7 @@ const preparedSQLStatements = {
         WHERE email = ?
         
         ;`,
-        checkPremiumStatus: `SELECT *  FROM user_details WHERE user_id = ?;`,
+        checkPremiumStatus: `SELECT premium  FROM user_details WHERE user_id = ?;`,
         updatePassword: `UPDATE users SET password_hash = ? WHERE id = ?;` 
     },
 
@@ -81,9 +82,11 @@ const preparedSQLStatements = {
         updateTranslationsLeft:  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;`,
         setTimer: `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;`,
         getTranslationTimeLeft: `SELECT translations_refresh FROM next_translations_refresh WHERE user_id = ?;`,
+    },
 
-
-
+    bufferStatements: {
+        checkForDeviceMatches: `SELECT device_types FROM api_keys WHERE user_id = ?;`,
+        fetchBufferContent: `SELECT buffer_content FROM ? WHERE user_id =?;`
     }
 
     

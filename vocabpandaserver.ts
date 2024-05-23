@@ -30,64 +30,73 @@ vocabpandaserver.use(express.json());
 
 vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
+    const generateAPIKeyResponse: appTypes.APIKeyOperationResponse = {
+        success: false,
+        message: "operation unsuccessful",
+        apiOperationType: "generate api key",
+        contentType: "account",
+        APIKey: "",
+        customResponse: ""
+    }
+
     try{
 
-        console.log(req)
+        const generateAPIKeyRequest: appTypes.APIGenerateKeyRequest = req.body;
 
         //Get database connection
 
-        const dbConnection = await UsersDatabase.getUsersDBConnection(); //Implement some kind of db pooling under the hood
+        const dbConnection = await UsersDatabase.getUsersDBConnection();
 
         dbConnection.mysqlConnection?.beginTransaction(err => {throw err})
 
-        const deviceId = req.body.deviceId;
-
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`
 
-        const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
+        const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, generateAPIKeyRequest.deviceId);
 
         if(queryResult.length === 0){
             
             //new API key
             const newAPIKey = uuid.v4();
             
-            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?, ?, ?);`  //api_key, device_id, user_id, public_key, private_key
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?, ?, ?, ?);`  //api_key, device_id, user_id, public_key, private_key, device_type
 
             await dbConnection.mysqlConnection?.query(
                 addNewDeviceSqlQuery,
                 [
                     newAPIKey,
-                    deviceId,
+                    generateAPIKeyRequest.deviceId,
                     null,
                     null,
-                    null
+                    null,
+                    generateAPIKeyRequest.deviceType
                 ]
             );
 
-            dbConnection.mysqlConnection?.commit()
+            dbConnection.mysqlConnection?.commit();
 
-            res.status(200).send({
-                message: "Device id does not exist... generated new api key",
-                APIKey: newAPIKey
-            }
-            );
+            generateAPIKeyResponse.APIKey = newAPIKey;
+            generateAPIKeyResponse.success = true;
+            generateAPIKeyResponse.message = "operation successful";
+
+            res.status(200).send(generateAPIKeyResponse);
 
         } else if (queryResult.length > 0){
 
-            res.status(200).send({
-                message: "Device id already exists.",
-                APIKey: queryResult[0].api_key 
-            });
+            generateAPIKeyResponse.customResponse = queryResult[0].api_key;
+
+            res.status(200).send(generateAPIKeyResponse);
 
             
         };
 
     }catch(e){
 
+        generateAPIKeyResponse.error = e;
+
         console.log(e);
 
         //Error occurs while handling request. 
-        res.status(500).send(e);
+        res.status(500).send(generateAPIKeyResponse);
 
     }
 

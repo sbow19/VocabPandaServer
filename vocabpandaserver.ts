@@ -4,9 +4,11 @@ import "module-alias/register";
 import UsersDatabase from "@shared/models/user_logins/users_db";
 
 import * as appTypes from "@appTypes/appTypes";
-import CronClass from "@shared/updates/cron";
+import * as apiTypes from "@appTypes/api";
+import CronClass from "@shared/cron/cron";
 
 import express from 'express';
+import { RowDataPacket } from "mysql2";
 const cors = require('cors');
 
 
@@ -30,28 +32,25 @@ vocabpandaserver.use(express.json());
 
 vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
-    const generateAPIKeyResponse: appTypes.APIKeyOperationResponse = {
+    const generateAPIKeyResponse: apiTypes.APIKeyOperationResponse = {
         success: false,
-        message: "operation unsuccessful",
-        apiOperationType: "generate api key",
-        contentType: "account",
-        APIKey: "",
-        customResponse: ""
+        operationType: "API Key",
+        APIKey: ""
     }
 
     try{
 
-        const generateAPIKeyRequest: appTypes.APIGenerateKeyRequest = req.body;
+        const generateAPIKeyRequest: apiTypes.APIGenerateKeyRequest = req.body;
 
         //Get database connection
 
         const dbConnection = await UsersDatabase.getUsersDBConnection();
 
-        dbConnection.mysqlConnection?.beginTransaction(err => {throw err})
+        await dbConnection.mysqlConnection?.beginTransaction();
 
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`
 
-        const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, generateAPIKeyRequest.deviceId);
+        const [queryResult, ] = await dbConnection.mysqlConnection?.query<RowDataPacket[]>(deviceIdSqlQuery, generateAPIKeyRequest.deviceId);
 
         if(queryResult.length === 0){
             
@@ -76,22 +75,18 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
             generateAPIKeyResponse.APIKey = newAPIKey;
             generateAPIKeyResponse.success = true;
-            generateAPIKeyResponse.message = "operation successful";
 
             res.status(200).send(generateAPIKeyResponse);
 
         } else if (queryResult.length > 0){
 
-            generateAPIKeyResponse.customResponse = queryResult[0].api_key;
-
+            generateAPIKeyResponse.APIKey = queryResult[0].api_key;
             res.status(200).send(generateAPIKeyResponse);
 
             
         };
 
     }catch(e){
-
-        generateAPIKeyResponse.error = e;
 
         console.log(e);
 

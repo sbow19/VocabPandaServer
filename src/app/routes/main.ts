@@ -17,12 +17,20 @@ appRouter.get("/", async (req, res)=>{
 });
 
 //When user logs into app or extension
-appRouter.use("/login", require("./api/users.js"));
-
-//When user updates entries in their project
-appRouter.use("/entries", require("./api/user_content.js"));
+appRouter.use("/login", require("./login/login.js"));
 
 //When user updates settings
-appRouter.use("/settings", require("./api/user_settings.js"));
+appRouter.use("/settings", require("./settings/user_settings.js"));
+
+//Local changes from the front end
+appRouter.post("/synclocalchanges", require("./sync_local_changes/sync_local_changes.js"))
+
+//Sync results sent from the front end
+appRouter.post("/syncresult", require("./sync_result/sync_result.js"))
+
+//Acknowledgements sent from the app frontend
+appRouter.post("/acknowledgement", require("./acknowledgement/acknowledgement.js"))
+
+
 
 module.exports = appRouter;

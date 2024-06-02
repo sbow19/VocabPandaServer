@@ -1,265 +1,28 @@
 import * as appTypes from "@appTypes/appTypes"
+import * as apiTypes from "@appTypes/api"
 import vpModel from "@shared/models/models_template";
 import preparedSQLStatements from "../prepared_statements";
-import { PoolConnection } from "mysql2/typings/mysql/lib/PoolConnection";
+import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
+import mysql, {ResultSetHeader, RowDataPacket} from 'mysql2/promise'
 const bcrypt = require('bcrypt');
-const basicAuth = require("basic-auth");
 const UserDBPool = require("./users_db_pool");
 
 
 class UsersDatabase extends vpModel {
 
 
-    static checkCredentials(userCredentials: {name: string, pass: string}): Promise<appTypes.DBResponseObject<appTypes.DBMatchResponseConfig>>{
-
-        //Checks API key to esnure that connecting device has api key generated on app download.
-
-        return new Promise(async(resolve, reject)=>{
-
-            const matchResponseObject: appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig> = {
-                matchMessage: "",
-                responseCode: 0,
-                responseMessage: "No match found"
-            }
-
-
-            try{
-
-                const dbResponseObject = await super.getUsersDBConnection(); //Get user logins pool connection
-
-                if(dbResponseObject.responseMessage === "Connection unsuccessful"){
-                    // If connection failed, then we reject the query, else we carry on
-                    throw dbResponseObject;
-                }
-
-                let matchQuery = 
-
-                `SELECT * FROM api_keys 
-                WHERE api_key = ?
-                AND device_id = ?
-                ; 
-                `
-                try{
-
-                    const [databaseResult] = await dbResponseObject.mysqlConnection.query(matchQuery, [
-                        userCredentials.pass,
-                        userCredentials.name
-                    ]) //Returns a result set, where the first array are the results, and the second are the headers.
-    
-                    if (databaseResult.length > 0){
-    
-                        //If the database returns a result, the API key exists and the device is verified.
-    
-                        matchResponseObject.responseMessage = "Match found";
-                        matchResponseObject.matchMessage = "Device verified";
-    
-                        resolve(matchResponseObject)
-                        return
-                    } else if (databaseResult.length === 0){
-    
-                        matchResponseObject.matchMessage = "Device could not be verified"
-    
-                        throw matchResponseObject // API key not verified, therefore login cannot take place
-                    }
-
-                }catch(e){
-
-                    console.log(console.trace())
-                    throw e
-
-                }finally{
-
-                    UserDBPool.releaseConnection(dbResponseObject.mysqlConnection);
-                }
-
-            }catch(e){
-
-                reject(e) // API key not verified, therefore login cannot take place
-                
-            }
-
-        })
-
-    }
-
-
-    //#TODO, logic to provide app with details on premium status, verified, updates, refresh changes etc.
-    static loginUser(userCredentials: appTypes.UserCredentials): Promise<appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig>> {
-
-        return new Promise(async(resolve, reject)=>{
-
-            const matchResponseObject: appTypes.DBMatchResponseObject<appTypes.DBMatchResponseConfig> = {
-                matchMessage: "",
-                responseCode: 0,
-                responseMessage: "No match found"
-            }
-
-            try{
-
-                const connectionResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                try{
-
-                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw e})
-
-                    if(connectionResponseObject.responseMessage === "Connection unsuccessful"){
-                        //If there is a failure to connect to the database, then we reject the promise
-                        reject(connectionResponseObject)
-                    }
-    
-    
-                    //Get user details ( Note that usernames are uqniue in the database )
-                    const userMatchQuery = 
-    
-                    `SELECT * FROM users 
-                    WHERE username = ?
-                    ;
-                    `
-    
-                    const emailMatchQuery = 
-    
-                    `
-                    SELECT * FROM users
-                    WHERE email = ?
-                    ;
-                    `
-                    
-                    const [userDatabaseResult] = await connectionResponseObject.mysqlConnection?.query(userMatchQuery, userCredentials.username);
-                    const [emailDatabaseResult] = await connectionResponseObject.mysqlConnection?.query(emailMatchQuery, userCredentials.username);
-    
-                    if (userDatabaseResult.length === 0 && emailDatabaseResult.length === 0){
-    
-                        //If there is a negative result, then the email or username does not exist.
-    
-                        matchResponseObject.responseMessage = "No match found";
-                        matchResponseObject.matchMessage = "Username or password does not match"
-    
-                        resolve(matchResponseObject)
-                    } 
-                    
-                    else if (userDatabaseResult.length > 0) {
-    
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        
-                        if(await bcrypt.compare(userCredentials.password, userDatabaseResult[0].password_hash)){
-                            matchResponseObject.responseMessage = "Match found";
-                            matchResponseObject.matchMessage = "User credentials verified"
-                            matchResponseObject.username = userDatabaseResult[0].username
-        
-                            resolve(matchResponseObject)
-                        } else {
-                            resolve(matchResponseObject)
-                        } //Compare user provided password with hash in database 
-                    } 
-                    
-                    else if (emailDatabaseResult.length > 0) {
-    
-                        //if there is a positive match, then the user exists, we will then check the hash    
-                        
-                        if(await bcrypt.compare(userCredentials.password, emailDatabaseResult[0].password_hash)){
-                            matchResponseObject.responseMessage = "Match found";
-                            matchResponseObject.matchMessage = "User credentials verified"
-                            matchResponseObject.username = emailDatabaseResult[0].username
-        
-                            resolve(matchResponseObject)
-                        } else {
-                            resolve(matchResponseObject)
-                        } //Compare user provided password with hash in database 
-                    }
-
-                }catch(e){
-
-                    throw e
-
-                }finally{
-
-                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
-
-                }
-
-                    
-            }catch(e){
-
-                reject(e)
-
-            }
-        })
-    }
-
-    //Check for existsing users
-    static #checkForUsers(dbConnection: PoolConnection, userCredentials: appTypes.UserCredentials): Promise<appTypes.dbMatchResponse> {
-
-        return new Promise(async(resolve, reject)=>{
-
-            const matchResponse: appTypes.dbMatchResponse = {
-                match: false
-            }
-
-            try{
-
-                    
-                    const [userDatabaseResult] = await dbConnection.query(
-                        preparedSQLStatements.generalStatements.usersUsernameMatch, 
-                        userCredentials.username
-                    );
-
-                    const [emailDatabaseResult] = await dbConnection.query(
-                        preparedSQLStatements.generalStatements.usersEmailMatch, 
-                        userCredentials.email
-                    );
-    
-                    if (userDatabaseResult.length === 0 && emailDatabaseResult.length === 0){
-    
-                        //If there is a negative result, then the email or username does not exist.
-    
-                        matchResponse.match = false;
-                        resolve(matchResponse);
-                    } 
-                    
-                    else if (userDatabaseResult.length > 0) {
-    
-                        //if there is a positive match, then the user exists, so we resolve the match object
-                        matchResponse.match = true;
-                        matchResponse.matchTerm = userDatabaseResult;
-                        resolve(matchResponse);
-                        
-                    } 
-                    
-                    else if (emailDatabaseResult.length > 0) {
-
-                        //if there is a positive match, then the user exists, so we resolve the match object
-                        matchResponse.match = true;
-                        matchResponse.matchTerm = emailDatabaseResult;
-                        resolve(matchResponse);
-    
-                        
-                    }
-
-                }catch(e){
-
-                    matchResponse.error = e;
-                    reject(e);
-
-                }
-
-                
-        })
-    }
-
     //Create new user + connection and match attempt
-    static createNewUser(userCredentials: appTypes.APICreateAccount, deviceCredentials): Promise<appTypes.APIAccountOperationResponse>{
+    static createNewUser(userCredentials: apiTypes.APICreateAccount, deviceCredentials): Promise<appTypes.DBOperation<string>>{
 
         //Attempt to get db connection
-
         return new Promise(async(resolve, reject)=>{
 
 
-            const createUserResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const createUserResponse: appTypes.DBOperation<string> = {
                 success: false,
-                operationType: "create",
-                contentType: "account",
-                accountOperation: "create account"
+                operationType: "DB Add User",
+                resultArray: "",
+                specificErrorCode: ""
             };
 
             try{
@@ -268,22 +31,11 @@ class UsersDatabase extends vpModel {
 
                 try{
                     
-                    //Check for user details, if no match then
-                    const matchMessage = await this.#checkForUsers(connectionResponseObject.mysqlConnection, userCredentials);
-
-                    //If match then we reject the promise
-                    if(matchMessage.match){
-                        throw matchMessage
-                    }
-
                     //New user id
-
                     const newUserId = super.generateUUID();
 
-                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
-
-                    //Password hash
-
+                    await connectionResponseObject.mysqlConnection?.beginTransaction();
+                    
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addAccount,
                         [
@@ -295,7 +47,6 @@ class UsersDatabase extends vpModel {
                     )
                     
                     //Connect new user id to device id 
-
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.connectUserDeviceToAccount,[
                         newUserId,
@@ -307,17 +58,16 @@ class UsersDatabase extends vpModel {
                 
 
                     createUserResponse.success = true;
-                    createUserResponse.message = "operation successful";
-                    createUserResponse.userId = newUserId; //Send the user id back to add new details
+                    createUserResponse.resultArray = newUserId; //Send the user id back to add new details
 
-                    resolve(createUserResponse)
+                    resolve(createUserResponse);
                         
-
-
                 }catch(e){
-                    throw e
+                    //If the username or email already exists, then we will get a duplicate error
+                    console.log("SQL ERROR, creating new user", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
-
                     //Release pool connection
                     UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
                 }
@@ -326,18 +76,16 @@ class UsersDatabase extends vpModel {
 
             }catch(e){
 
-                console.log(e);
-
-                if(e.match === "match"){
-
-                    createUserResponse.customResponse = "user exists"
-                    reject(createUserResponse)
-                } else {
-
-                    //If there is some error...
-                    createUserResponse.error = e;
+                if(e.code === "ER_DUP_UNIQUE"){
+                    //If an error code exists
+                    createUserResponse.specificErrorCode = e.code;
                     reject(createUserResponse);
-
+                }else if (e.code){
+                    createUserResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    createUserResponse.specificErrorCode = "Unknown error";
+                    reject(e);
                 }
                 
             }
@@ -346,16 +94,15 @@ class UsersDatabase extends vpModel {
     }
 
     //Delete user
-    static deleteUser(userCredentials: appTypes.APIDeleteAccount): Promise<appTypes.APIAccountOperationResponse>{
+    static deleteUser(userCredentials: apiTypes.APIDeleteAccount): Promise<appTypes.DBOperation>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const deleteUserResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const deleteUserResponse: appTypes.DBOperation = {
+                operationType: "DB Delete User",
                 success: false,
-                operationType: "remove",
-                contentType: "account",
-                accountOperation: "delete account"
+                specificErrorCode: "",
+                resultArray: null
             };
 
             try{
@@ -364,27 +111,31 @@ class UsersDatabase extends vpModel {
 
                 try{
 
-                    dbConnection.mysqlConnection?.beginTransaction(err=>{throw err})
+                    dbConnection.mysqlConnection?.beginTransaction()
                     
     
-                    const [databaseResult] = await dbConnection.mysqlConnection?.query(
+                    const [databaseResult, ] = await dbConnection.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.generalStatements.userIdMatch
                         , 
-                    [userCredentials.userId,
-                         userCredentials.userId]);
+                        [
+                            userCredentials.userId,
+                            userCredentials.userId
+                        ]);
                     
 
    
                     if(await bcrypt.compare(userCredentials.password, databaseResult[0].password_hash)){
                         //match successful Leave empty, continue
                     } else {
-                        throw deleteUserResponse;
+                        deleteUserResponse.specificErrorCode = "Password does not match ";
+                        reject(deleteUserResponse);
+                        return
                     } 
                     
 
                     //IF match found in checking for users, then account can be deleted. 
                 
-                    await dbConnection.mysqlConnection?.query(
+                    const [queryResult, ] = await dbConnection.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.accountStatements.deleteAccount, 
                         [
                             userCredentials.userId,
@@ -394,15 +145,22 @@ class UsersDatabase extends vpModel {
 
                     dbConnection.mysqlConnection?.commit();
 
-            
+                    if(queryResult.affectedRows === 0){
+                        //Both tables need to be updated
+                        deleteUserResponse.specificErrorCode = "No rows affected";
+                        reject(deleteUserResponse);
 
-                    deleteUserResponse.message = "operation successful";
-                    deleteUserResponse.success = true;
+                    } else if (queryResult.affectedRows > 0){
+                        deleteUserResponse.success = true;
+                        resolve(deleteUserResponse);
+                    }
 
-                    resolve(deleteUserResponse)  
 
                 }catch(e){
-                    throw e
+                    //If the username or email already exists, then we will get a duplicate error
+                    console.log("SQL ERROR, deleting user", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
 
                     //Release 
@@ -411,29 +169,29 @@ class UsersDatabase extends vpModel {
                 }              
 
             }catch(e){
-                console.log(e);
-
-                //If there is some error...
-                deleteUserResponse.error = e
-                reject(deleteUserResponse);
+                if (e.code){
+                    deleteUserResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    deleteUserResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
                 
             }
         })
     };
 
     //Update password
-
-    static updatePassword(accountObject: appTypes.APIUpdatePassword): Promise<appTypes.APIAccountOperationResponse>{
+    static updatePassword(accountObject: apiTypes.APIUpdatePassword): Promise<appTypes.DBOperation>{
         return new Promise(async(resolve, reject)=>{
 
 
 
-            const updatePasswordResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const updatePasswordResponse: appTypes.DBOperation = {
                 success: false,
-                operationType: "update",
-                contentType: "account",
-                accountOperation: "change password"
+                operationType: "Update Password",
+                specificErrorCode: "",
+                resultArray: null
             };
 
             try{
@@ -442,10 +200,10 @@ class UsersDatabase extends vpModel {
 
                 try{
                              
-                    connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err})
+                    connectionResponseObject.mysqlConnection?.beginTransaction();
                     
     
-                    const [databaseResult] = await connectionResponseObject.mysqlConnection?.query(
+                    const [databaseResult, ] = await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.generalStatements.userIdMatch
                         , 
                     accountObject.userId);
@@ -456,7 +214,7 @@ class UsersDatabase extends vpModel {
                     if(await bcrypt.compare(accountObject.oldPassword, databaseResult[0].password_hash)){
                         //match successful Leave empty, continue
                     } else {
-                        reject(updatePasswordResponse)
+                        reject(updatePasswordResponse);
                         return
                     } 
 
@@ -467,18 +225,25 @@ class UsersDatabase extends vpModel {
                     
                     //new password_hash, username
 
-                    await connectionResponseObject.mysqlConnection.query(
+                    const [changeResult, ] = await connectionResponseObject.mysqlConnection.query<ResultSetHeader>(
                         preparedSQLStatements.accountStatements.updatePassword,
                         [hashedPassword, accountObject.userId]
                     );
                     
-                    updatePasswordResponse.message = "operation successful";
-                    updatePasswordResponse.success = true;
+                    if(changeResult.affectedRows === 0){
+                        //Both tables need to be updated
+                        updatePasswordResponse.specificErrorCode = "No rows affected";
+                        reject(updatePasswordResponse);
 
-                    resolve(updatePasswordResponse);
+                    } else if (changeResult.affectedRows > 0){
+                        updatePasswordResponse.success = true;
+                        resolve(updatePasswordResponse);
+                    }
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, changing password", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
 
                 }finally{
                     //release pool connection
@@ -487,26 +252,95 @@ class UsersDatabase extends vpModel {
 
             }catch(e){
 
-                console.log(e);
+                if (e.code){
+                    updatePasswordResponse.specificErrorCode = e.code;
+                    reject(updatePasswordResponse);
+                }else{
+                    updatePasswordResponse.specificErrorCode = "Unknown error";
+                    reject(updatePasswordResponse);
+                }
+                
+            }
+        })
+    }
 
-                //If there is some error...
-                updatePasswordResponse.error = e;
-                reject(updatePasswordResponse);
+    static isCorrectPassword(loginResult: apiTypes.LoginResult): Promise<appTypes.DBOperation>{
+        return new Promise(async(resolve, reject)=>{
+
+
+
+            const correctPasswordResponse: appTypes.DBOperation = {
+                success: false,
+                operationType: "Compare Password",
+                specificErrorCode: "",
+                resultArray: null
+            };
+
+            try{
+
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                try{
+                             
+                    connectionResponseObject.mysqlConnection?.beginTransaction();
+                    
+    
+                    const [databaseResult, ] = await connectionResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                        preparedSQLStatements.generalStatements.usersUsernameMatch
+                        , 
+                        loginResult.username);
+                    
+                    
+                    if(databaseResult.length === 0){
+                        //Both tables need to be updated
+                        correctPasswordResponse.specificErrorCode = "No rows affected";
+                        reject(correctPasswordResponse);
+
+                    } else if (databaseResult.length === 1){
+                        //if there is a positive match, then the user exists, we will then check the hash    
+                    
+                        if(await bcrypt.compare(loginResult.password, databaseResult[0].password_hash)){
+                            //match successful Leave empty, continue
+                            correctPasswordResponse.success = true;
+                            resolve(correctPasswordResponse);
+                        } else {
+                            reject(correctPasswordResponse);
+                        }
+                    }
+
+                }catch(e){
+                    console.log("SQL ERROR, Fetching password", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
+
+                }finally{
+                    //release pool connection
+                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                } 
+
+            }catch(e){
+
+                if (e.code){
+                    correctPasswordResponse.specificErrorCode = e.code;
+                    reject(correctPasswordResponse);
+                }else{
+                    correctPasswordResponse.specificErrorCode = "Unknown error";
+                    reject(correctPasswordResponse);
+                }
                 
             }
         })
     }
 
     //Save email verification token
-    static saveEmailVerification(token: string, email: string): Promise<appTypes.APIAccountOperationResponse>{
+    static saveEmailVerification(token: string, email: string): Promise<appTypes.DBOperation>{
         return new Promise(async(resolve, reject)=>{
 
-            const addEmailTokenResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const addEmailTokenResponse: appTypes.DBOperation = {
                 success: false,
-                operationType: "create",
-                contentType: "account",
-                accountOperation: "create account"
+                specificErrorCode: "",
+                operationType: "Save Email Verification Token",
+                resultArray: null
             };
 
             try{
@@ -516,11 +350,9 @@ class UsersDatabase extends vpModel {
                 try{
 
                     //Get token expiry (1 hour);
-
                     const tokenExpiry = super.getTokenExpiry(); 
 
                     //Save token, email, and token expiry
-                    
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addEmailVerificationToken, 
                         [
@@ -531,12 +363,13 @@ class UsersDatabase extends vpModel {
                     );
 
                     addEmailTokenResponse.success = true;
-                    addEmailTokenResponse.message = "operation successful";
-                    
                     resolve(addEmailTokenResponse);
 
                 }catch(e){
-                    throw e 
+                    //If the username or email already exists, then we will get a duplicate error
+                    console.log("SQL ERROR, error saving email token", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
 
                     //release pool connection
@@ -544,81 +377,29 @@ class UsersDatabase extends vpModel {
                 }
             
             }catch(e){
-                console.log(e);
-                console.log(console.trace());
-                //If there is some error...
-                addEmailTokenResponse.error = e;
-                reject(addEmailTokenResponse);
+
+                if (e.code){
+                    addEmailTokenResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    addEmailTokenResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
             }
         })
     }
 
-    //Check email verification time
-    static checkEmailVerification = (token: string): Promise<appTypes.dbMatchResponse> =>{
+    //Get ID from verification token
+    static getEmailFromToken = (token: string): Promise<appTypes.DBOperation<string>> =>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbMatchResponse: appTypes.dbMatchResponse = {
-                match: false
-            };
+            const getEmailResponse: appTypes.DBOperation<string> = {
 
-            try{
-
-                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-
-                try{
-
-                    //Get current time
-                    const currentTime = super.getCurrentTime();
-
-                    //Check if token exists and has not expired
-                    
-                    const [queryResult] = await connectionResponseObject.mysqlConnection?.query(
-                        preparedSQLStatements.accountStatements.checkTokenVerification, 
-                        [
-                            token,
-                            currentTime
-                        ]
-                    );
-
-                    if(queryResult.length === 1){
-
-                        dbMatchResponse.match = true;      
-                        dbMatchResponse.matchTerm = queryResult;          
-                        resolve(dbMatchResponse);
-
-                    } else if (queryResult.length === 0){
-
-                        throw "No matches in email token database."
-                    }
-
-                }catch(e){
-                    throw e
-                }finally{
-                    //release pool connection
-                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
-                };
-
-            }catch(e){
-                console.log(e);
-                //If there is some error...
-                dbMatchResponse.error = e;
-                reject(dbMatchResponse);
-                
-            }
-        })
-    };
-
-
-    //Delete  email verification token
-    static deleteEmailVerification = (token: string): Promise<appTypes.APIAccountOperationResponse> =>{
-        return new Promise(async(resolve, reject)=>{
-
-            const dbDeleteResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+                resultArray: "",
                 success: false,
-                operationType: "remove",
-                accountOperation: "verify email",
-                contentType: "account"
+                operationType: "Get Email From Token",
+                specificErrorCode: ""
+                
             };
 
             try{
@@ -629,20 +410,32 @@ class UsersDatabase extends vpModel {
                 try{
                     //delete token, email, and token expiry
                     
-                    await connectionResponseObject.mysqlConnection?.query(
+                    const [resultRow,] = await connectionResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.accountStatements.deleteEmailVerificationToken, 
                         [
                             token
                         ]
                     );
 
-                    dbDeleteResponse.success = true;
-                    dbDeleteResponse.message = "operation successful";
-                    
-                    resolve(dbDeleteResponse);
+                    if(resultRow.length === 0){
+
+                        getEmailResponse.specificErrorCode = "No rows affected"
+                        reject(getEmailResponse)
+
+                    }else if (resultRow.length === 1){
+
+                        const email: string = resultRow[0]["email"];
+
+                        getEmailResponse.resultArray = email;
+                        getEmailResponse.success = true;
+
+                        resolve(getEmailResponse);
+                    }
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, fetching email with verification token", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     //release pool connection
                     UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
@@ -650,27 +443,84 @@ class UsersDatabase extends vpModel {
                 
             }catch(e){
 
-                console.log(e);
-                console.log(console.trace()); 
+                if (e.code){
+                    getEmailResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    getEmailResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
+            }
+        })
+    }
+    //Delete  email verification token
+    static deleteEmailVerification = (token: string): Promise<appTypes.DBOperation> =>{
+        return new Promise(async(resolve, reject)=>{
 
-                //If there is some error...
-                dbDeleteResponse.error = e;
-                reject(dbDeleteResponse);
+            const TokenDeleteResponse: appTypes.DBOperation = {
+                success: false,
+                operationType: "Delete Verification Token",
+                specificErrorCode: "",
+                resultArray: null
+                
+            };
+
+            try{
+
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+
+                try{
+                    //delete token, email, and token expiry
+                    
+                    const [deleteResponse, ] = await connectionResponseObject.mysqlConnection?.query<ResultSetHeader>(
+                        preparedSQLStatements.accountStatements.deleteEmailVerificationToken, 
+                        [
+                            token
+                        ]
+                    );
+
+                    if(deleteResponse.rowsAffected === 0){
+                        //Failed to delete a token
+                        TokenDeleteResponse.specificErrorCode = "No rows affected"
+                    }else if (deleteResponse.rowsAffected === 1){
+                        TokenDeleteResponse.success = true;
+                        resolve(TokenDeleteResponse);
+                    }
+                    
+
+                }catch(e){
+                    console.log("SQL ERROR, delete email token", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
+                }finally{
+                    //release pool connection
+                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                }
+                
+            }catch(e){
+
+                if (e.code){
+                    TokenDeleteResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    TokenDeleteResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
             }
         })
     }
 
     //Check email verification time
-
-    static updateVerification =(email: string): Promise<appTypes.APIAccountOperationResponse> => {
+    static updateVerification =(email: string): Promise<appTypes.DBOperation> => {
         return new Promise(async(resolve, reject)=>{
 
-            const dbUpdateResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const updateResponse: appTypes.DBOperation = {
                 success: false,
-                operationType: "update",
-                accountOperation: "verify email",
-                contentType: "account"
+                resultArray: null,
+                specificErrorCode: "",
+                operationType: "Update Verification Status"
+
             };
 
             try{
@@ -681,19 +531,25 @@ class UsersDatabase extends vpModel {
 
                     //Update user verification status here
                     
-                    await connectionResponseObject.mysqlConnection?.query(
+                    const [updateResult, ] = await connectionResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.accountStatements.updateVerificationStatus, 
                         [
                             email
                         ]
                     );
 
-                    dbUpdateResponse.message = "operation successful";
-                    dbUpdateResponse.success = true;
-                    
-                    resolve( dbUpdateResponse);
+                    if(updateResult.rowsAffected === 0){
+                        //Failed to update verification status
+                        updateResponse.specificErrorCode = "No rows affected"
+                    }else if (updateResult.rowsAffected === 1){
+                        updateResponse.success = true;
+                        resolve(updateResponse);
+                    }
+
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, update verification status", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     //release pool connection
                     UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
@@ -701,17 +557,177 @@ class UsersDatabase extends vpModel {
                 
             }catch(e){
 
-                console.log(e);
-                console.log(console.trace())
-
-                //If there is some error...
-                dbUpdateResponse = e;
-                reject(dbUpdateResponse);
+                if (e.code){
+                    updateResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    updateResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
                 
             }
         })
     }
 
+    //Get user verif status
+    static getVerificationStatus = (userId: string): Promise<appTypes.DBOperation<boolean>> =>{
+        return new Promise(async(resolve, reject)=>{
+
+            const fetchResult: appTypes.DBOperation<boolean> = {
+                success: false,
+                resultArray: false,
+                specificErrorCode: "",
+                operationType: "Get Verification Status"
+
+            }
+
+            try{
+
+                //Get db connection
+                const dbResponseObject = await super.getUsersDBConnection();
+
+                try{
+                    //Begin transaction
+                    await dbResponseObject.mysqlConnection?.beginTransaction();
+
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                        preparedSQLStatements.accountStatements.getVerificationStatus,
+                        [
+                            userId
+                        ]
+                    )
+                    
+                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
+                    
+                    if(queryResponse.affectedRows === 0){
+                        //No user found 
+                        reject(fetchResult);
+
+                    } else if (queryResponse.affectedRows > 0){
+                        //User found
+
+                        if(queryResponse[0].verified === 1){
+                            fetchResult.resultArray = true;
+                        }else if(queryResponse[0].verified === 0){
+                            fetchResult.resultArray = false
+                        }
+
+                        fetchResult.success = true;
+
+                        resolve(fetchResult)
+                    }
+
+                }catch(e){
+                    console.log("SQL ERROR, fetching premium", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
+                }finally{
+                    UserDBPool.releaseConnection(dbResponseObject.mysqlConnection);
+                }
+
+            }catch(e){
+                if(e.code){
+                    //If an error code exists
+                    fetchResult.specificErrorCode = e.code;
+                    reject(fetchResult);
+                }else{
+                    e.specificErrorCode = "Unknown error"
+                    reject(fetchResult);
+                };
+
+            }
+
+        })
+    }
+
+    //Get account details
+    static getAccountDetails = (userId: string): Promise<appTypes.DBOperation<apiTypes.AccountDetails>>=>{
+        return new Promise(async(resolve, reject)=>{
+
+
+
+            const getAccountDetailsResponse: appTypes.DBOperation<apiTypes.AccountDetails> = {
+                success: false,
+                operationType: "Update Password",
+                specificErrorCode: "",
+                resultArray: {
+                    userSettings: {},
+                    userPremiumStatus: null,
+                    userVerified: null
+                }
+            };
+
+            //Fetch Account settings
+            try{
+
+                const settingsGetResult = await UserDetailsDatabase.getUserSettings(userId);
+                getAccountDetailsResponse.resultArray.userSettings = settingsGetResult.resultArray; 
+
+            }catch(e){
+
+                if (e.code){
+                    getAccountDetailsResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    getAccountDetailsResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
+                return
+
+            }
+
+            //Fetch premium status
+            try{
+
+                const premiumGetResult = await UserDetailsDatabase.checkPremiumStatus(userId);
+                getAccountDetailsResponse.resultArray.userPremiumStatus = premiumGetResult.resultArray; 
+
+            }catch(e){
+
+                if (e.code){
+                    getAccountDetailsResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    getAccountDetailsResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
+                return
+
+            }
+
+            //Fetch verification status
+            try{
+
+                const verificationGetResult = await this.getVerificationStatus(userId);
+
+                if(verificationGetResult.resultArray === false){
+
+                    getAccountDetailsResponse.resultArray.userVerified = verificationGetResult.resultArray;
+                    getAccountDetailsResponse.specificErrorCode = "User not verified"
+                    reject(verificationGetResult)
+
+                } else if (verificationGetResult.resultArray === true){
+
+                    getAccountDetailsResponse.resultArray.userVerified = verificationGetResult.resultArray;
+
+                }
+
+            }catch(e){
+
+                if (e.code){
+                    getAccountDetailsResponse.specificErrorCode = e.code;
+                    reject(e);
+                }else{
+                    getAccountDetailsResponse.specificErrorCode = "Unknown error";
+                    reject(e);
+                }
+                return
+
+            }
+
+            resolve(getAccountDetailsResponse);
+        })
+    }
 
 }
 

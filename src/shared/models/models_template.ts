@@ -9,6 +9,11 @@ const UserDBPool = require("./user_logins/users_db_pool");
 const UserDetailsDBPool = require("./user_details/user_details_pool");
 const UserContentDBPool = require("./user_content/user_content_pool");
 const UserBuffersDBPool = require("./user_content/user_buffers_pool");
+const UserSyncDBPool = require("./user_content/user_sync_pool");
+import UserBuffersDatabase from "./user_buffers/user_buffers_db";
+import * as apiTypes from '@appTypes/api'
+import UsersContentDatabase from "./user_content/user_content_db";
+
 
 class vpModel {
     constructor(){
@@ -72,19 +77,20 @@ class vpModel {
         return sqlFormattedDate
     }
 
-    static getUsersDetailsDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+    static getUsersDetailsDBConnection(): Promise<appTypes.DBConnectionObject>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+            const dbResponseObject: appTypes.DBConnectionObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             }
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await UserDetailsDBPool.getConnection();
+                const databaseConnection: mysqlTypes.PoolConnection = await UserDetailsDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
@@ -101,19 +107,21 @@ class vpModel {
 
     };
 
-    static getUsersContentDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+    static getUsersContentDBConnection(): Promise<appTypes.DBConnectionObject>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+
+           const dbResponseObject: appTypes.DBConnectionObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             }
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await UserContentDBPool.getConnection();
+                const databaseConnection: mysqlTypes.PoolConnection = await UserContentDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
@@ -123,8 +131,7 @@ class vpModel {
             } catch (e) {
 
                 dbResponseObject.responseMessage = "Connection unsuccessful"
-
-                reject (dbResponseObject)
+                reject (dbResponseObject);
             }
         })
 
@@ -132,30 +139,53 @@ class vpModel {
 
     //Get DB connection re every function
 
-    static getUsersDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+    static getUsersDBConnection(): Promise<appTypes.DBConnectionObject>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+            const dbResponseObject: appTypes.DBConnectionObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
+            }
+
+            try{
+                const databaseConnection: mysqlTypes.PoolConnection = await UserDBPool.getConnection();
+                dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.message = "Connection successful"
+                resolve(dbResponseObject)
+            }catch(e){
+                dbResponseObject.message = "Connection unsuccessful"
+                reject (dbResponseObject)
+            }
+        })
+
+    };
+
+    static getUserSyncDBConnection(): Promise<appTypes.DBConnectionObject>{
+
+        return new Promise(async(resolve, reject)=>{
+
+            const dbResponseObject: appTypes.DBConnectionObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             }
 
             try{
 
-                const databaseConnection: mysqlTypes.Connection = await UserDBPool.getConnection();
+                const databaseConnection: mysqlTypes.PoolConnection = await UserSyncDBPool.getConnection();
 
                 dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful"
-                console.log("connection to user db was successful")
 
                 resolve(dbResponseObject)
 
             } catch (e) {
 
                 dbResponseObject.responseMessage = "Connection unsuccessful"
-                console.log("connection to user db was unsuccessful")
 
                 reject (dbResponseObject)
             }
@@ -163,31 +193,25 @@ class vpModel {
 
     };
 
-    static getUsersBuffersDBConnection(): Promise<appTypes.DBResponseObject<appTypes.DBResponseObjectConfig>>{
+    static getUsersBuffersDBConnection(): Promise<appTypes.DBConnectionObject>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const dbResponseObject: appTypes.DBResponseObject<appTypes.DBResponseObjectConfig> = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+            const dbResponseObject: appTypes.DBConnectionObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             }
 
             try{
-
-                const databaseConnection: mysqlTypes.Connection = await UserBuffersDBPool.getConnection();
-
+                const databaseConnection: mysqlTypes.PoolConnection = await UserBuffersDBPool.getConnection();
                 dbResponseObject.mysqlConnection = databaseConnection;
-                dbResponseObject.responseMessage = "Connection successful"
-                console.log("connection to user db was successful")
-
+                dbResponseObject.message = "Connection successful"     
                 resolve(dbResponseObject)
 
             } catch (e) {
-
-                dbResponseObject.responseMessage = "Connection unsuccessful"
-                console.log("connection to user db was unsuccessful")
-
+                dbResponseObject.message = "Connection unsuccessful"
                 reject (dbResponseObject)
             }
         })
@@ -305,6 +329,60 @@ class vpModel {
             }
     })
     }
+
+    /* SYNCING HANDLERS */
+    static parseLocalContent = (localSyncRequests: apiTypes.LocalSyncRequest<apiTypes.APIContentCallDetails>[]): Promise<appTypes.LocalContentParsingResult>=>{
+        return new Promise(async(resolve, reject)=>{
+
+            const localContentParsingResult: appTypes.LocalContentParsingResult = {
+                localContent: false,
+                contentArray: [],
+                operationType: "Parse content queue",
+                success: false
+            };
+
+            const contentArray: Array<apiTypes.OperationWrapper | null> = [];
+
+            try{
+                //Check if there is any content in each local sync request, and append to content array
+                for(let localSyncRequest of localSyncRequests){
+                    //Check if there is any content in each local sync request, and append to content array
+                    if(localSyncRequest.requestDetails.contentQueue){
+                        const requestContent: Array<apiTypes.OperationWrapper | null> = localSyncRequest.requestDetails.contentQueue;
+                        contentArray.push(...requestContent); //Push contents of content queue
+                    } else if (!localSyncRequest.requestDetails.contentQueue){
+                        //There is no content queue in this request
+
+                        localContentParsingResult.success = true;
+                        resolve(localContentParsingResult);
+                    }
+                }
+
+                //Check length of content array
+                if(contentArray.length === 0){
+                    //No content to sync
+
+                    localContentParsingResult.success = true;
+                    resolve(localContentParsingResult)
+                }else if(contentArray.length > 0){
+                    //We resolve content array
+
+                    localContentParsingResult.success = true;
+                    localContentParsingResult.contentArray = contentArray;
+                    resolve(localContentParsingResult);
+
+                }
+
+            }catch(e){
+
+                console.log(e);
+                reject(localContentParsingResult);
+            }
+
+        })
+    };
+
+
 }
 
 export default vpModel;

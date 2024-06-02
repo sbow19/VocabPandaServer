@@ -1,8 +1,8 @@
-const mysql = require("mysql2/promise");
+import mysql2 from "mysql2/promise";
 
 //Create connection pool 
 
-const UserDetailsDBPool = mysql.createPool({
+const UserDetailsDBPool = mysql2.createPool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
     database: "user_details",

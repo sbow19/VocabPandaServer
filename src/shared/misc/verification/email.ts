@@ -7,14 +7,11 @@ const nodemailer = require("nodemailer");
 
 class VocabPandaEmail {
 
-    static sendVerificationEmail = (email: string) => {
+    static sendVerificationEmail = (email: string): Promise<appTypes.BackendOperation> => {
 
-        const sendEmailResponse: appTypes.APIAccountOperationResponse = {
-            message: "operation unsuccessful",
+        const sendEmailResponse: appTypes.BackendOperation = {
             success: false,
-            operationType: "create",
-            contentType: "account",
-            accountOperation: "create account"
+            operationType: "Send Verification Email"
         };
 
         return new Promise(async(resolve, reject)=>{
@@ -22,10 +19,20 @@ class VocabPandaEmail {
             const token = crypto.randomBytes(32).toString('hex');
 
             try{
-                
 
+                //save token in database if email successfully sent, otherwise we skip.
+                await UsersDatabase.saveEmailVerification(token, email);
+
+            }catch(e){
+                console.log(e, "Error with saving email verification");
+                reject(sendEmailResponse);
+                return
+            }
+
+            try{
+                
                 const transporter = nodemailer.createTransport({
-    
+
                     service: "gmail",
                     port: 465,
                     secure: true,
@@ -47,57 +54,80 @@ class VocabPandaEmail {
             
                 });
 
-                //save token in database if email successfully sent, otherwise we skip.
-
-                await UsersDatabase.saveEmailVerification(token, email);
-            
-                resolve(console.log("Message sent: " + result.messageId));
+                console.log("Message sent: " + result.messageId);
 
             }catch(e){
-
-
-                const mailSendError = new Error("nodemail", {
-                    
-
-                });
-
-                sendEmailResponse.error = mailSendError;
                 console.log(e, "Error with nodemail connection");
                 reject(sendEmailResponse);
+                return
             }
+
+            sendEmailResponse.success = true;
+            resolve(sendEmailResponse);
+
+            
         })
     }
 
-    static checkToken = (token: string): Promise<appTypes.APIAccountOperationResponse> =>{
+    static verifyEmailToken = (token: string): Promise<appTypes.DBOperation> =>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const checkEmailTokenResponse: appTypes.APIAccountOperationResponse = {
-                message: "operation unsuccessful",
+            const checkEmailTokenResponse: appTypes.DBOperation = {
                 success: false,
-                operationType: "create",
-                contentType: "account",
-                accountOperation: "verify email"
+                operationType: "Check Verification Token",
+                resultArray: null,
+                specificErrorCode: ""
             };
 
+            let email: string;
+
             try{
-                
-                let dbMatchResponse = await UsersDatabase.checkEmailVerification(token);
+                //Get user ID by verification toke
+                const getIDResult = await UsersDatabase.getEmailFromToken(token);
 
-                if(dbMatchResponse.match === true){
+                email = getIDResult.resultArray;
 
-                    await UsersDatabase.deleteEmailVerification(token);
+            }catch(e){
 
-                    await UsersDatabase.updateVerification(dbMatchResponse.matchTerm[0].email)
+                if(e.specificErrorCode === "No rows affected"){
 
-                    resolve(console.log("User verified"));
+                    checkEmailTokenResponse.specificErrorCode = e.specificErrorCode
+
+                }else{
+
+                    checkEmailTokenResponse.specificErrorCode = e.specificErrorCode
+
                 }
+
+                reject(e);
+                return
+
+            }
+
+            try{
+                //Attempt to delete email token
+                await UsersDatabase.deleteEmailVerification(token);
                 
             }catch(e){
 
-                checkEmailTokenResponse.error = e; 
+                checkEmailTokenResponse.specificErrorCode = e.specificErrorCode; 
                 reject(checkEmailTokenResponse); 
+                return
             }
+
+            try{
+                //Change user verification status
+                await UsersDatabase.updateVerification(email);
+
+            }catch(e){
+
+                checkEmailTokenResponse.specificErrorCode = e.specificErrorCode; 
+                reject(checkEmailTokenResponse); 
+                return
+                      
+            }
+            
         })
     }
 }

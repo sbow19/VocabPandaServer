@@ -1,4 +1,6 @@
 import * as appTypes from "@appTypes/appTypes"
+import * as apiTypes from '@appTypes/api'
+import mysql, {ResultSetHeader, RowDataPacket}  from 'mysql2/promise'
 import vpModel from "@shared/models/models_template";
 const strftime = require('strftime');
 const UserDetailsDBPool = require("./user_details_pool");
@@ -7,29 +9,35 @@ import preparedSQLStatements from "../prepared_statements";
 class UserDetailsDatabase extends vpModel {
 
     //Add new user details
-    static addNewUserDetails(userCredentials: appTypes.UserCredentials, userId: string): Promise<appTypes.APIAccountOperationResponse>{
+    static addNewUserDetails(userCredentials: apiTypes.APICreateAccount, userId: string, deviceId: string): Promise<appTypes.DBOperation>{
 
         return new Promise(async(resolve, reject)=>{
 
-            const addUserDetailsResponse: appTypes.APIAccountOperationResponse = {
-                success: false,
-                operationType: "create",
-                accountOperation: "create account",
-                contentType: "account",
-                userId: userId,
-                message: "operation unsuccessful"
+            const addUserDetailsResponse: appTypes.DBOperation = {
+                success: false, 
+                operationType: "DB Add User",
+                specificErrorCode: "",
+                resultArray: null
             }
 
             const sqlFormattedDate = super.getCurrentTime();
+
+            let appValue: 0|1 = 0;
+            let extensionValue: 0|1 = 0;
+
+            if(userCredentials.deviceType === "app"){
+                appValue = 1;
+            }else if(userCredentials.deviceType === "extension"){
+                extensionValue = 1;
+            }
 
             try{
 
                 const connectionResponseObject = await super.getUsersDetailsDBConnection(); //Get connection to user_logins table
 
                 try{
-
                     //Begin transaction
-                    await connectionResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                    await connectionResponseObject.mysqlConnection?.beginTransaction();
 
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addUserDetails,
@@ -53,22 +61,32 @@ class UserDetailsDatabase extends vpModel {
                         ])
                     
                     //Add x plays/ translations left and refresh times
-
                     await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.accountStatements.addDefaultNextPlaysRefresh, [userId, null]);
                     await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.accountStatements.addDefaultNextTranslationsRefresh, [userId, null]);
                     await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.accountStatements.addDefaultPlaysLeft, [userId, 10]);
                     await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.accountStatements.addDefaultTranslationsLeft, [userId, 100]);
-            
 
-                    await connectionResponseObject.mysqlConnection?.commit(); // commit add new user transaction        
+                    //Add details to buffer 
+                    const bufferContent =  [];
+                    const jsonString = JSON.stringify(bufferContent);
 
-                    addUserDetailsResponse.message = "operation successful"
+                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserApp, [userId, jsonString, deviceId]);
+                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserExtension, [userId, jsonString, deviceId]);
+                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserHub, [userId, appValue, extensionValue]);
+
+                    //Add details to sync 
+                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.syncStatements.addNewUser, [0, userId, deviceId, null]);
+
+                    // commit add new user transaction  
+                    await connectionResponseObject.mysqlConnection?.commit();       
+
                     addUserDetailsResponse.success = true
-
                     resolve(addUserDetailsResponse)
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, creating new user", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
 
                     //Release pool connection
@@ -76,27 +94,27 @@ class UserDetailsDatabase extends vpModel {
                 }
 
             }catch(e){
-
-                console.log(e);
-
-                //If there is some error...
-                addUserDetailsResponse.error = e;
-                reject(addUserDetailsResponse);
+                if(e.code){
+                    //If an error code exists
+                    addUserDetailsResponse.specificErrorCode = e.code;
+                    reject(addUserDetailsResponse);
+                }else{
+                    addUserDetailsResponse.specificErrorCode = "Unknown error"
+                    reject(e);
+                }
             }
         })
     };
 
     //Update user settings
-
-    static updateUserSettings = (settingsObject: appTypes.UserSettings): Promise<appTypes.APIOperationResponse>=>{
+    static updateUserSettings = (settingsObject: apiTypes.UserSettings): Promise<appTypes.DBOperation>=>{
         return new Promise(async(resolve, reject)=>{
 
-            const settingsUpdateResponse: appTypes.APIOperationResponse = {
+            const settingsUpdateResponse: appTypes.DBOperation = {
 
                 success: false,
-                message: "operation unsuccessful",
-                operationType: "update",
-                contentType: "settings"
+                specificErrorCode: "",
+                operationType: "DB Settings Operation"
             };
 
             try{
@@ -107,11 +125,10 @@ class UserDetailsDatabase extends vpModel {
 
                 try{
                     //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
-                   
-
-                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.settingsStatements.updateUserSettings,
                         [
                             settingsObject.gameTimerOn,
@@ -124,43 +141,47 @@ class UserDetailsDatabase extends vpModel {
                     
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
+                    //Check affected rows
                     if(queryResponse.affectedRows === 0){
-
-                        settingsUpdateResponse.message = "operation unsuccessful";
-
+                        //No rows affected
+                        settingsUpdateResponse.specificErrorCode = "No rows affected";
                         reject(settingsUpdateResponse);
 
                     } else if (queryResponse.affectedRows > 0){
-
-                        settingsUpdateResponse.message ="operation successful";
                         settingsUpdateResponse.success = true;
-
-                        resolve(settingsUpdateResponse)
+                        resolve(settingsUpdateResponse);
                     }
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, updating settings", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
 
             }catch(e){
-                console.log(e, "update user settings error")
-                settingsUpdateResponse.message = "operation unsuccessful"
-                reject(settingsUpdateResponse);
+                if(e.code){
+                    //If an error code exists
+                    settingsUpdateResponse.specificErrorCode = e.code;
+                    reject(settingsUpdateResponse);
+                }else{
+                    settingsUpdateResponse.specificErrorCode = "Unknown error"
+                    reject(settingsUpdateResponse);
+                }
 
             }
         })
     }
 
-    static getUserSettings = (userId: string): Promise<appTypes.APIOperationResponse<appTypes.UserSettings>>=>{
+    static getUserSettings = (userId: string): Promise<appTypes.DBOperation<apiTypes.UserSettings>>=>{
         return new Promise(async(resolve, reject)=>{
 
-            const fetchResult: appTypes.APIOperationResponse<appTypes.UserSettings> = {
-                operationType: "get",
-                message: "operation unsuccessful",
+            const fetchResult: appTypes.DBOperation<apiTypes.UserSettings> = {
+                operationType: "DB Settings Operation",
+                specificErrorCode: "",
                 success: false,
-                contentType: "settings"
+                resultArray: {}
             }
 
             try{
@@ -171,10 +192,10 @@ class UserDetailsDatabase extends vpModel {
 
                 try{
                     //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
                    
-                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.settingsStatements.getUserSettings,
                         [
                             userId
@@ -186,237 +207,56 @@ class UserDetailsDatabase extends vpModel {
                     if(queryResponse.affectedRows === 0){
                         //No user settings identified for this user
 
-                        fetchResult.message = "operation unsuccessful";
+                        fetchResult.specificErrorCode = "No rows affected";
                         reject(fetchResult);
 
                     } else if (queryResponse.affectedRows === 1){
 
                         const userSettings = queryResponse[0];
 
-                        fetchResult.message ="operation successful";
                         fetchResult.success = true;
-                        fetchResult.customResponse?.defaultOutputLanguage = userSettings["output_lang"];
-                        fetchResult.customResponse?.defaultProject = userSettings["default_project"];
-                        fetchResult.customResponse?.defaultTargetLanguage = userSettings["target_lang"];
-                        fetchResult.customResponse?.gameNoOfTurns = userSettings["slider_val"];
-                        fetchResult.customResponse?.gameTimerOn = userSettings["timer_on"]; 
+                        fetchResult.resultArray.defaultOutputLanguage = userSettings["output_lang"];
+                        fetchResult.resultArray.defaultProject = userSettings["default_project"];
+                        fetchResult.resultArray.defaultTargetLanguage = userSettings["target_lang"];
+                        fetchResult.resultArray.gameNoOfTurns = userSettings["slider_val"];
+                        fetchResult.resultArray.gameTimerOn = userSettings["timer_on"]; 
 
                         resolve(fetchResult)
                     }
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, fetching settings", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
 
             }catch(e){
-                console.log(e, "Fetch user settings error")
-                fetchResult.message = "operation unsuccessful"
-                reject(fetchResult);
+                if(e.code){
+                    //If an error code exists
+                    fetchResult.specificErrorCode = e.code;
+                    reject(fetchResult);
+                }else{
+                    e.specificErrorCode = "Unknown error"
+                    reject(fetchResult);
+                }
 
             }
         })
     }
 
-
-    //Ugrade user to premium
-    
-    static upgradeToPremium(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>{
-        return new Promise(async(resolve, reject)=>{
-
-            const dbUpdateResponseObject: appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig> = {
-                responseCode: 0,
-                responseMessage: "upgrade unsuccessful",
-                updateMessage: ""
-            }
-            try{
-
-                const dbResponseObject = await super.getUsersDetailsDBConnection();
-
-                if(dbResponseObject.responseMessage === "Connection unsuccessful"){
-                    reject(dbUpdateResponseObject);
-                    return
-                };
-
-                try{
-
-                    //start db transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err})
-
-                    //Get user Id
-                    const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
-
-                    const userId = matchMessage
-
-                    //upgrade user in user details database
-
-                    const upgradeSqlStatement = `
-
-                    UPDATE user_details
-                    SET premium = 1
-                    WHERE username = ?;
-                    `
-
-                    const updateResult = await dbResponseObject.mysqlConnection.query(
-                        upgradeSqlStatement,
-                        username
-                    );
-
-
-                    //Add details to user_details.premium_users
-
-                    const membershipEndTime = super.getMembershipEndTime();
-
-                    const savePremiumInfoSql = `INSERT INTO premium_users VALUES(?, ?, ?);`  //user_id,  username, membership_end
-
-                    await dbResponseObject.mysqlConnection?.query(
-                        savePremiumInfoSql,
-                        [
-                            userId,
-                            username,
-                            membershipEndTime
-                        ]
-                    )
-
-                    //Update x games and refresh times
-
-                    const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
-                    const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
-                    const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
-                    const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
-
-
-                    await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
-                    await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
-                    await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [null, userId]);
-                    await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [120, userId]);
-
-                    //Commit db transaction 
-                    dbResponseObject.mysqlConnection?.commit();
-
-                    //Configure response object on success
-                    dbUpdateResponseObject.responseMessage = "Upgrade successful"
-                    
-                    resolve(dbUpdateResponseObject);
-
-
-                }catch(e){
-                    throw e
-                }finally{
-
-                    //Release pool connection
-                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
-                }
-
-                
-            }catch(e){
-
-                console.log(e)
-                reject(dbUpdateResponseObject)
-            }
-
-        })
-    }
-
-    //downgrade user from premium
-
-    static downgradeToFree(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>{
-        return new Promise(async(resolve, reject)=>{
-
-            const dbUpdateResponseObject: appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig> = {
-                responseCode: 0,
-                responseMessage: "Downgrade unsuccessful",
-                updateMessage: ""
-            }
-            try{
-
-                const dbResponseObject = await super.getUsersDetailsDBConnection();
-
-                if(dbResponseObject.responseMessage === "Connection unsuccessful"){
-                    reject(dbUpdateResponseObject);
-                    return
-                }
-
-                try{
-
-                     //Start transaction 
-                    dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
-
-                    //upgrade user in user details database
-
-                    const downgradeSqlStatement = `
-
-                    UPDATE user_details
-                    SET premium = 0
-                    WHERE username = ?;
-                    `
-
-                    const downgradeResult = await dbResponseObject.mysqlConnection.query(
-                        downgradeSqlStatement,
-                        username
-                    );
-
-
-                    //Get user Id
-                    const {matchMessage} = await super.getUserId(username);  //retrieves userId from response object
-
-                    const userId = matchMessage;
-
-                    //Remove details to user_details.premium_users
-                    const removePremiumInfoSql = `DELETE FROM premium_users WHERE user_id = ?;`  //user_id
-
-                    await dbResponseObject.mysqlConnection?.query(removePremiumInfoSql, userId);
-
-                    //Update x games and refresh times
-                    const nextPlaysSqlQuery =  `UPDATE next_plays_refresh SET game_refresh = ? WHERE user_id = ?;` //user_id, game_refresh
-                    const nextTranslationsSqlQuery =  `UPDATE next_translations_refresh SET translations_refresh = ? WHERE user_id = ?;` //user_id, translations_refresh
-                    const playLeftSqlQuery =  `UPDATE plays_left SET plays_left = ? WHERE user_id = ?;` //user_id, plays_left
-                    const translationsLeftSqlQuery =  `UPDATE translation_left SET translations_left = ? WHERE user_id = ?;` //user_id, translation_left
-
-
-                    await dbResponseObject.mysqlConnection.query(nextPlaysSqlQuery, [null, userId]);
-                    await dbResponseObject.mysqlConnection.query(nextTranslationsSqlQuery, [null, userId]);
-                    await dbResponseObject.mysqlConnection.query(playLeftSqlQuery, [10, userId]);
-                    await dbResponseObject.mysqlConnection.query(translationsLeftSqlQuery, [40, userId]);
-
-                    //Commit db transaction 
-
-                    dbResponseObject.mysqlConnection?.commit()
-
-                    //Configure response object on success
-
-                    dbUpdateResponseObject.responseMessage = "Downgrade successful";
-                    
-                    resolve(dbUpdateResponseObject);
-
-                }catch(e){
-                    throw e
-                }finally{
-                    //Release pool connection
-                    UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
-                }
-               
-
-            }catch(e){
-
-                console.log(e);
-                reject(dbUpdateResponseObject);
-            }
-
-        })
-    }
 
     //Get user premium status
-    static checkPremiumStatus = (userId: string): Promise<boolean> =>{
+    static checkPremiumStatus = (userId: string): Promise<appTypes.DBOperation<boolean>> =>{
         return new Promise(async(resolve, reject)=>{
 
-            const fetchResult: appTypes.APIOperationResponse<boolean> = {
+            const fetchResult: appTypes.DBOperation<boolean> = {
                 success: false,
-                message: "operation unsuccessful",
-                contentType: "account",
-                operationType: "get",
-                customResponse: false
+                resultArray: false,
+                specificErrorCode: "",
+                operationType: "Get Premium Status"
+
             }
 
             try{
@@ -426,13 +266,14 @@ class UserDetailsDatabase extends vpModel {
 
                 try{
                     //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
+                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
-                    const [queryResponse] = await dbResponseObject.mysqlConnection?.query(
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.accountStatements.checkPremiumStatus,
                         [
                             userId
-                        ])
+                        ]
+                    )
                     
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
@@ -443,30 +284,34 @@ class UserDetailsDatabase extends vpModel {
                     } else if (queryResponse.affectedRows > 0){
                         //User found
 
-                        let premium: boolean;
                         if(queryResponse[0].premium === 1){
-                            premium = true;
+                            fetchResult.resultArray = true;
                         }else if(queryResponse[0].premium === 0){
-                            premium = false
+                            fetchResult.resultArray = false
                         }
 
-                        fetchResult.message ="operation successful";
                         fetchResult.success = true;
-                        fetchResult.customResponse = premium;
 
-                        resolve(premium);
+                        resolve(fetchResult)
                     }
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, fetching premium", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 }
 
             }catch(e){
-                console.log(e, "update user settings error")
-                fetchResult.message = "operation unsuccessful"
-                reject(fetchResult);
+                if(e.code){
+                    //If an error code exists
+                    fetchResult.specificErrorCode = e.code;
+                    reject(fetchResult);
+                }else{
+                    e.specificErrorCode = "Unknown error"
+                    reject(fetchResult);
+                };
 
             }
 
@@ -474,13 +319,14 @@ class UserDetailsDatabase extends vpModel {
     }
 
     //Update last logged in
-    static updateLastLoggedIn(username: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>{
+    static updateLastLoggedIn(userId: string): Promise<appTypes.DBOperation>{
         return new Promise(async(resolve, reject)=>{
 
-            const dbUpdateResponseObject: appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig> = {
-                responseCode: 0,
-                responseMessage: "Update unsuccessful",
-                updateMessage: ""
+            const lastLoggedInResponse: appTypes.DBOperation = {
+                success: false,
+                specificErrorCode: "",
+                operationType: "Update Last Logged In",
+                resultArray: null
             }
 
             const sqlFormattedDate = super.getCurrentTime();
@@ -489,94 +335,47 @@ class UserDetailsDatabase extends vpModel {
 
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
 
-                if(dbResponseObject.responseMessage === "Connection unsuccessful"){
-                    reject(dbUpdateResponseObject);
-                    return
-                }
-
                 try{
 
-                    dbResponseObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
-                    try{
-                        const updateLoggedInSqlStatement = `
+                
+                    const [updateResultUsername, ] = await dbResponseObject.mysqlConnection.query<ResultSetHeader>(
+                        preparedSQLStatements.accountStatements.updateLastLoggedIn,
+                        [
+                            sqlFormattedDate,
+                            userId
+                        ]
+                    );
 
-                        UPDATE user_details
-                        SET last_logged_in = ?
-                        WHERE username = ?
-                        ;
-                        `
+                    dbResponseObject.mysqlConnection?.commit(); 
 
-                        const [updateResultUsername]  = await dbResponseObject.mysqlConnection.query(
-                            updateLoggedInSqlStatement,
-                            [
-                                sqlFormattedDate,
-                                username
-                            ]
-                        );
-
-                        console.log(updateResultUsername, "update result by user")
-
-                        if(updateResultUsername.affectedRows === 0){
-                            throw false
-                        } else if (updateResultUsername.affectedRows === 1){
-                            dbUpdateResponseObject.responseMessage = "Update successful"
-                            resolve(dbUpdateResponseObject);
-                        };
-
-                    }catch(e){
-
-                        //Get user_id from email first
-                        const userDB = await super.getUsersDBConnection();
-
-                        const userIdSqlStatement = `
-                            SELECT id
-                            FROM users
-                            WHERE email = ?
-                            ;
-                        `
-
-                        const [idRow] = await userDB.mysqlConnection.query(
-                            userIdSqlStatement,
-                            username
-                        );
-
-                        console.log(idRow, "id row")
-
-                        const id = idRow[0].id; 
-                        const updateLoggedInSqlStatement = `
-
-                        UPDATE user_details
-                        SET last_logged_in = ?
-                        WHERE user_id= ?
-                        ;
-                        `
-
-                        const [updateResultUsername]  = await dbResponseObject.mysqlConnection.query(
-                            updateLoggedInSqlStatement,
-                            [
-                                sqlFormattedDate,
-                                id
-                            ]
-                        );
-
-                        dbUpdateResponseObject.responseMessage = "Update successful"
-                    
-                        resolve(dbUpdateResponseObject);
-                    } finally {
-                        dbResponseObject.mysqlConnection?.commit(e=>{throw e});                        
-                    }
+                    if(updateResultUsername.affectedRows === 0){
+                        lastLoggedInResponse.specificErrorCode = "No rows affected";
+                        reject(lastLoggedInResponse);
+                    } else if (updateResultUsername.affectedRows === 1){
+                        lastLoggedInResponse.success = true;
+                        resolve(lastLoggedInResponse);
+                    };
 
                 }catch(e){
-                    throw e
+                    console.log("SQL ERROR, updating logged in time", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
                 }finally{
                     //Release pool connection
                     UserDetailsDBPool.releaseConnection(dbResponseObject.mysqlConnection);
                 };
 
             }catch(e){
-                console.log(e);
-                reject(dbUpdateResponseObject);
+                if(e.code){
+                    //If an error code exists
+                    lastLoggedInResponse.specificErrorCode = e.code;
+                    reject(lastLoggedInResponse);
+                }else{
+                    lastLoggedInResponse.specificErrorCode = "Unknown error"
+                    reject(lastLoggedInResponse);
+                }
             }
 
         })
@@ -607,7 +406,7 @@ class UserDetailsDatabase extends vpModel {
                     WHERE user_id = ?;
                 `
 
-                    await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    await dbConnectionObject.mysqlConnection?.beginTransaction();
 
                     const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
                         checkTranslationsSqlQuery,
@@ -659,7 +458,7 @@ class UserDetailsDatabase extends vpModel {
                 
 
                 try{
-                    await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    await dbConnectionObject.mysqlConnection?.beginTransaction();
 
                     const [translationTimeLeftResult] = await dbConnectionObject.mysqlConnection?.query(
                         preparedSQLStatements.translationsStatements.getTranslationTimeLeft,
@@ -694,7 +493,6 @@ class UserDetailsDatabase extends vpModel {
         })
     }
 
-
     //Subtract translations left
     static updateTranslationsLeft(username: string): Promise<appTypes.TranslationsLeft>{
         return new Promise(async (resolve, reject)=>{
@@ -712,7 +510,7 @@ class UserDetailsDatabase extends vpModel {
 
                 try{
 
-                    await dbConnectionObject.mysqlConnection?.beginTransaction(err =>{throw err});
+                    await dbConnectionObject.mysqlConnection?.beginTransaction();
 
                     const [translationsLeftResult] = await dbConnectionObject.mysqlConnection?.query(
                         preparedSQLStatements.translationsStatements.checkTranslationsLeft,
@@ -876,6 +674,79 @@ class UserDetailsDatabase extends vpModel {
             }catch(e){
                 reject(e)
             }
+        })
+    }
+
+    //Update plays left an plays refresh time
+    static updatePlaysLeft(playsDetails: apiTypes.PlaysDetails): Promise<appTypes.DBOperation>{
+        return new Promise(async (resolve, reject)=>{
+
+            const DBOperationResult: appTypes.DBOperation = {
+                operationType: "DB Plays Operation",
+                specificErrorCode: "",  //My SQL error codes
+                success: false
+            }
+
+
+            try{
+                //Get db connection
+                const dbConnectionObject = await super.getUsersDetailsDBConnection();
+            
+                try{
+                    //Begin transaction
+                    await dbConnectionObject.mysqlConnection?.beginTransaction();
+                   
+                    const [queryResponse1,] = await dbConnectionObject.mysqlConnection?.query<ResultSetHeader>(
+                        preparedSQLStatements.generalStatements.updatePlays,
+                        [
+                            playsDetails.playsLeft,
+                            playsDetails.userId
+                        ]
+                    )
+
+                    const [queryResponse2,] = await dbConnectionObject.mysqlConnection?.query<ResultSetHeader>(
+                        preparedSQLStatements.generalStatements.updatePlaysRefreshTime,
+                        [
+                            playsDetails.playsRefreshTime,
+                            playsDetails.userId
+                        ]
+                    )
+                    
+                    await dbConnectionObject.mysqlConnection?.commit(); 
+                    
+                    if(queryResponse1.affectedRows === 0 || queryResponse2.affectedRows === 0){
+                        //Both tables need to be updated
+                        DBOperationResult.specificErrorCode = "No rows affected";
+                        reject(DBOperationResult);
+
+                    } else if (queryResponse1.affectedRows > 0 && queryResponse2.affectedRows > 0){
+                        DBOperationResult.success = true;
+                        resolve(DBOperationResult);
+                    }
+
+                }catch(e){
+
+                    console.log("SQL ERROR, updating plays left", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
+     
+
+                }finally{
+                    UserDetailsDBPool.releaseConnection(dbConnectionObject.mysqlConnection);
+                }
+
+            }catch(e){
+
+                if(e.code){
+                    //If an error code exists
+                    DBOperationResult.specificErrorCode = e.code;
+                    reject(DBOperationResult);
+                }else{
+                    DBOperationResult.specificErrorCode = "Unknown error"
+                    reject(e);
+                }
+            }
+            
         })
     }
 }

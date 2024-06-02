@@ -1,25 +1,22 @@
 const schedule = require("node-schedule");
-import RefreshCounter from "@shared/updates/refresh/refresh";
+import RefreshCounter from "@shared/cron/refresh/refresh";
 import EmailVerificationChecker from "./email/email_verification";
 
 class CronClass {
 
-
     static runCronJobs(){
 
         //Check refresh counters
-        
         schedule.scheduleJob("* * * * *", function(){
-            RefreshCounter.gameRefreshChecker()
+            RefreshCounter.playsRefreshChecker()
             .then(log=>{
 
                 //Record log of changes in database
-
-                CronClass.#recordChangesLog(log, "Game refresh check");
+                CronClass.#recordChangesLog(log, "Plays refresh check");
             })
             .catch(error=>{
 
-                CronClass.#recordErrorsLog(error, "Game refresh check");
+                CronClass.#recordErrorsLog(error, "Plays refresh check");
 
                 //Record error log.
             })
@@ -46,19 +43,16 @@ class CronClass {
             .then(log=>{
 
                 //Record log of changes in database
-
                 CronClass.#recordChangesLog(log, "Premium check");
             })
             .catch(error=>{
 
                 CronClass.#recordErrorsLog(error, "Premium check");
-
                 //Record error log.
             })
         });
 
         //Check email verification list
-
         schedule.scheduleJob("* * * *", function(){
             EmailVerificationChecker.CheckUnverifiedEmails()
             .then(log=>{
@@ -80,6 +74,8 @@ class CronClass {
     };
 
     static #recordChangesLog(log, changeType){
+
+        console.log(log, changeType)
         return
     }
 

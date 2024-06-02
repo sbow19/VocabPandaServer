@@ -2,7 +2,7 @@ require("dotenv").config();
 const cors = require('cors');
 const express = require('express');
 import * as appTypes from "@appTypes/appTypes";
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 import UserDetailsDatabase from "@shared/models/user_details/user_details_db";
 
 const DeeplAPI = express.Router();

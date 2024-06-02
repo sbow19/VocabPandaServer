@@ -3,7 +3,7 @@ import UsersDatabase from '@shared/models/user_logins/users_db';
 import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
 import * as apiTypes from '@appTypes/api'
 import SyncProcess from '@shared/sync/sync';
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 const basicAuth = require("basic-auth");
 
 const usersRouter = express.Router();

@@ -4,92 +4,63 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
+const prepared_statements_1 = __importDefault(require("@shared/models/prepared_statements"));
 const UserDBPool = require("../../models/user_logins/users_db_pool");
 class EmailVerificationChecker {
-    static CheckUnverifiedEmails() {
+    static CheckUnverifiedEmails = () => {
         return new Promise(async (resolve, reject) => {
-            const emailVerificationResponse = {
-                responseMessage: "Check complete",
-                info: "",
-                errorMessage: null
+            const refreshResponse = {
+                success: false,
+                operationType: "Email Verification Check",
+                specificErrorCode: "",
+                resultArray: null
             };
+            const currentTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
             try {
                 //Get db connection
                 const dbConnectionObject = await users_db_1.default.getUsersDBConnection();
                 try {
-                    await dbConnectionObject.mysqlConnection?.beginTransaction(err => { throw err; });
-                    const currentTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
-                    const checkUnverifiedEmailsSqlQuery = 'SELECT * FROM verification WHERE token_expiry < ?;';
-                    const [queryResults] = await dbConnectionObject.mysqlConnection?.query(checkUnverifiedEmailsSqlQuery, currentTime);
+                    await dbConnectionObject.mysqlConnection?.beginTransaction();
+                    const [queryResults,] = await dbConnectionObject.mysqlConnection.query(prepared_statements_1.default.CRONQueries.getUnverifiedEmails, currentTime);
                     if (queryResults.length > 0) {
                         //Update email verifications and users in database
                         for (let user of queryResults) {
-                            const email = user.email;
-                            const updateAPIKeyQuery = `
-
-                                UPDATE api_keys
-                                SET user_id = null
-                                WHERE user_id = (
-
-                                    SELECT id 
-                                    FROM users
-                                    WHERE email = ?
-
-                                );
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(updateAPIKeyQuery, email, (e) => {
-                                console.log(e);
-                            });
-                            const deleteUserQuery = `
-
-                                DELETE FROM users
-                                WHERE email = ?
-                                ;
-
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(deleteUserQuery, email);
-                            const deleteEmailVerificationQuery = `
-
-                                DELETE FROM verification
-                                WHERE email = ?
-                                ;
-                            `;
-                            await dbConnectionObject.mysqlConnection?.query(deleteEmailVerificationQuery, email);
+                            const [deleteResult,] = await dbConnectionObject.mysqlConnection.query(prepared_statements_1.default.CRONQueries.deleteUserByEmail, user.email);
+                            if (deleteResult.length === 0) {
+                                refreshResponse.specificErrorCode = "No rows affected";
+                                reject(refreshResponse);
+                            }
                         }
-                        emailVerificationResponse.responseMessage = "Check complete";
-                        emailVerificationResponse.info = {
-                            queryResults: queryResults,
-                            time: currentTime
-                        };
-                        resolve(emailVerificationResponse);
+                        refreshResponse.success = true;
+                        resolve(refreshResponse);
                     }
                     else if (queryResults.length === 0) {
-                        emailVerificationResponse.responseMessage = "Check complete";
-                        emailVerificationResponse.info = "No changes required.";
-                        console.log('No matches found at', currentTime);
-                        resolve(emailVerificationResponse);
+                        refreshResponse.success = true;
+                        resolve(refreshResponse);
                     }
                     await dbConnectionObject.mysqlConnection?.commit();
                 }
                 catch (e) {
-                    throw e;
+                    console.log("SQL ERROR, updating email verification", e);
+                    const sqlError = e;
+                    throw sqlError;
                 }
                 finally {
                     UserDBPool.releaseConnection(dbConnectionObject.mysqlConnection);
                 }
             }
-            catch (err) {
-                emailVerificationResponse.errorMessage = err;
-                emailVerificationResponse.responseMessage = "Check unsuccessful";
-                const EmailVerificationError = new Error("Unable to check unverified emails.");
-                EmailVerificationError.cause = {
-                    err,
-                    emailVerificationResponse
-                };
-                reject(EmailVerificationError);
+            catch (e) {
+                if (e.code) {
+                    refreshResponse.specificErrorCode = e.code;
+                    reject(refreshResponse);
+                }
+                else {
+                    refreshResponse.specificErrorCode = "Unknown error";
+                    reject(refreshResponse);
+                }
             }
         });
-    }
+    };
 }
 ;
 exports.default = EmailVerificationChecker;

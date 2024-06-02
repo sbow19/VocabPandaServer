@@ -38,7 +38,7 @@ class CronClass {
             })
         });
 
-        schedule.scheduleJob("* * * * *", function(){
+        schedule.scheduleJob("*/30 * * * *", function(){
             RefreshCounter.premiumUserChecker()
             .then(log=>{
 

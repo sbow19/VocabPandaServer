@@ -1,7 +1,7 @@
 import UserDetailsDatabase from "@shared/models/user_details/user_details_db";
 import * as appTypes from "@appTypes/appTypes"
 const UserDetailsDBPool = require("../../models/user_details/user_details_pool");
-import mysql, {ResultSetHeader, RowDataPacket} from 'mysql2/promise'
+import mysql, {RowDataPacket} from 'mysql2/promise'
 import preparedSQLStatements from "@shared/models/prepared_statements";
 
 class RefreshCounter {

@@ -1,6 +1,6 @@
 import * as appTypes from '@appTypes/appTypes';
 import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 const express = require('express');
 
 const usersSettingsRouter = express.Router();

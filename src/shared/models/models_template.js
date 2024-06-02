@@ -1,12 +1,17 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const { v4: uuidv4 } = require('uuid');
-const mysql = require("mysql2/promise");
+const prepared_statements_1 = __importDefault(require("./prepared_statements"));
 const strftime = require("strftime");
 const dayjs = require("dayjs");
 const UserDBPool = require("./user_logins/users_db_pool");
 const UserDetailsDBPool = require("./user_details/user_details_pool");
 const UserContentDBPool = require("./user_content/user_content_pool");
+const UserBuffersDBPool = require("./user_buffers/user_buffers_pool");
+const UserSyncDBPool = require("./user_sync/user_sync_pool");
 class vpModel {
     constructor() {
     }
@@ -53,9 +58,10 @@ class vpModel {
     static getUsersDetailsDBConnection() {
         return new Promise(async (resolve, reject) => {
             const dbResponseObject = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             };
             try {
                 const databaseConnection = await UserDetailsDBPool.getConnection();
@@ -73,9 +79,10 @@ class vpModel {
     static getUsersContentDBConnection() {
         return new Promise(async (resolve, reject) => {
             const dbResponseObject = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             };
             try {
                 const databaseConnection = await UserContentDBPool.getConnection();
@@ -93,20 +100,61 @@ class vpModel {
     static getUsersDBConnection() {
         return new Promise(async (resolve, reject) => {
             const dbResponseObject = {
-                responseCode: 0,
-                responseMessage: "Connection successful",
-                mysqlConnection: null
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
             };
             try {
                 const databaseConnection = await UserDBPool.getConnection();
                 dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.message = "Connection successful";
+                resolve(dbResponseObject);
+            }
+            catch (e) {
+                dbResponseObject.message = "Connection unsuccessful";
+                reject(dbResponseObject);
+            }
+        });
+    }
+    ;
+    static getUserSyncDBConnection() {
+        return new Promise(async (resolve, reject) => {
+            const dbResponseObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
+            };
+            try {
+                const databaseConnection = await UserSyncDBPool.getConnection();
+                dbResponseObject.mysqlConnection = databaseConnection;
                 dbResponseObject.responseMessage = "Connection successful";
-                console.log("connection to user db was successful");
                 resolve(dbResponseObject);
             }
             catch (e) {
                 dbResponseObject.responseMessage = "Connection unsuccessful";
-                console.log("connection to user db was unsuccessful");
+                reject(dbResponseObject);
+            }
+        });
+    }
+    ;
+    static getUsersBuffersDBConnection() {
+        return new Promise(async (resolve, reject) => {
+            const dbResponseObject = {
+                message: "Connection successful",
+                mysqlConnection: null,
+                operationType: "DB Connection",
+                success: false
+            };
+            try {
+                const databaseConnection = await UserBuffersDBPool.getConnection();
+                dbResponseObject.mysqlConnection = databaseConnection;
+                dbResponseObject.message = "Connection successful";
+                resolve(dbResponseObject);
+            }
+            catch (e) {
+                dbResponseObject.message = "Connection unsuccessful";
                 reject(dbResponseObject);
             }
         });
@@ -156,6 +204,91 @@ class vpModel {
             }
         });
     }
+    static userExists(userId) {
+        //Check whether user exists
+        return new Promise(async (resolve, reject) => {
+            const userMatchResponse = {
+                match: false
+            };
+            try {
+                const usersDBResponseObject = await this.getUsersDBConnection(); //Gets pool connection
+                try {
+                    //Attempt sql queries
+                    const [databaseResult] = await usersDBResponseObject.mysqlConnection?.query(prepared_statements_1.default.generalStatements.userIdMatch, [
+                        userId,
+                        userId
+                    ]);
+                    if (databaseResult.length === 0) {
+                        //No user exists with this user id
+                        resolve(userMatchResponse);
+                    }
+                    else if (databaseResult === 1) {
+                        //User exists
+                        userMatchResponse.match = true;
+                        userMatchResponse.matchTerm = databaseResult;
+                        resolve(userMatchResponse);
+                    }
+                }
+                catch (e) {
+                    throw e;
+                }
+                finally {
+                    //Release connection regardless of search outcome
+                    UserDBPool.releaseConnection(usersDBResponseObject.mysqlConnection);
+                }
+                ;
+            }
+            catch (e) {
+                //Other misc error.  Careful not to return boolean
+                console.log(e);
+                console.log(console.trace());
+                reject(e);
+            }
+        });
+    }
+    /* SYNCING HANDLERS */
+    static parseLocalContent = (localSyncRequests) => {
+        return new Promise(async (resolve, reject) => {
+            const localContentParsingResult = {
+                localContent: false,
+                contentArray: [],
+                operationType: "Parse content queue",
+                success: false
+            };
+            const contentArray = [];
+            try {
+                //Check if there is any content in each local sync request, and append to content array
+                for (let localSyncRequest of localSyncRequests) {
+                    //Check if there is any content in each local sync request, and append to content array
+                    if (localSyncRequest.requestDetails.contentQueue) {
+                        const requestContent = localSyncRequest.requestDetails.contentQueue;
+                        contentArray.push(...requestContent); //Push contents of content queue
+                    }
+                    else if (!localSyncRequest.requestDetails.contentQueue) {
+                        //There is no content queue in this request
+                        localContentParsingResult.success = true;
+                        resolve(localContentParsingResult);
+                    }
+                }
+                //Check length of content array
+                if (contentArray.length === 0) {
+                    //No content to sync
+                    localContentParsingResult.success = true;
+                    resolve(localContentParsingResult);
+                }
+                else if (contentArray.length > 0) {
+                    //We resolve content array
+                    localContentParsingResult.success = true;
+                    localContentParsingResult.contentArray = contentArray;
+                    resolve(localContentParsingResult);
+                }
+            }
+            catch (e) {
+                console.log(e);
+                reject(localContentParsingResult);
+            }
+        });
+    };
 }
 exports.default = vpModel;
 //# sourceMappingURL=models_template.js.map

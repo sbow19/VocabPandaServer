@@ -1,10 +1,8 @@
 import * as appTypes from "@appTypes/appTypes"
-import * as mysqlTypes from "mysql2"
-import * as apiTypes from '@appTypes/api'
 import mysql, { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import vpModel from "@shared/models/models_template";
 import preparedSQLStatements from "../prepared_statements";
-const UserSyncDBPool = require("./users_db_pool");
+const UserSyncDBPool = require("./user_sync_pool");
 
 
 class UserSyncDatabase extends vpModel {

@@ -4,10 +4,10 @@ import UserDetailsDatabase from "@shared/models/user_details/user_details_db";
 import VocabPandaEmail from "@shared/misc/verification/email";
 import * as appTypes from "@appTypes/appTypes";
 import * as apiTypes from "@appTypes/api";
-import { Request, Response} from "express";
+import { Request } from "express";
 const bycrypt = require("bcrypt");
 const basicAuth = require("basic-auth");
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 
 
 //Account middleware

@@ -3,7 +3,6 @@ const uuid = require("uuid");
 import "module-alias/register";
 import UsersDatabase from "@shared/models/user_logins/users_db";
 
-import * as appTypes from "@appTypes/appTypes";
 import * as apiTypes from "@appTypes/api";
 import CronClass from "@shared/cron/cron";
 

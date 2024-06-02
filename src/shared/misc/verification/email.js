@@ -9,14 +9,20 @@ const nodemailer = require("nodemailer");
 class VocabPandaEmail {
     static sendVerificationEmail = (email) => {
         const sendEmailResponse = {
-            message: "operation unsuccessful",
             success: false,
-            operationType: "create",
-            contentType: "account",
-            accountOperation: "create account"
+            operationType: "Send Verification Email"
         };
         return new Promise(async (resolve, reject) => {
             const token = crypto.randomBytes(32).toString('hex');
+            try {
+                //save token in database if email successfully sent, otherwise we skip.
+                await users_db_1.default.saveEmailVerification(token, email);
+            }
+            catch (e) {
+                console.log(e, "Error with saving email verification");
+                reject(sendEmailResponse);
+                return;
+            }
             try {
                 const transporter = nodemailer.createTransport({
                     service: "gmail",
@@ -36,38 +42,58 @@ class VocabPandaEmail {
                     subject: "Testing nodemail",
                     text: `Click on this link to verify your email: http://192.168.1.254:3000/account/createaccount/verify?token=${token}`, //Replace with IP of VPS 
                 });
-                //save token in database if email successfully sent, otherwise we skip.
-                await users_db_1.default.saveEmailVerification(token, email);
-                resolve(console.log("Message sent: " + result.messageId));
+                console.log("Message sent: " + result.messageId);
             }
             catch (e) {
-                const mailSendError = new Error("nodemail", {});
-                sendEmailResponse.error = mailSendError;
                 console.log(e, "Error with nodemail connection");
                 reject(sendEmailResponse);
+                return;
             }
+            sendEmailResponse.success = true;
+            resolve(sendEmailResponse);
         });
     };
-    static checkToken = (token) => {
+    static verifyEmailToken = (token) => {
         return new Promise(async (resolve, reject) => {
             const checkEmailTokenResponse = {
-                message: "operation unsuccessful",
                 success: false,
-                operationType: "create",
-                contentType: "account",
-                accountOperation: "verify email"
+                operationType: "Check Verification Token",
+                resultArray: null,
+                specificErrorCode: ""
             };
+            let email;
             try {
-                let dbMatchResponse = await users_db_1.default.checkEmailVerification(token);
-                if (dbMatchResponse.match === true) {
-                    await users_db_1.default.deleteEmailVerification(token);
-                    await users_db_1.default.updateVerification(dbMatchResponse.matchTerm[0].email);
-                    resolve(console.log("User verified"));
-                }
+                //Get user ID by verification toke
+                const getIDResult = await users_db_1.default.getEmailFromToken(token);
+                email = getIDResult.resultArray;
             }
             catch (e) {
-                checkEmailTokenResponse.error = e;
+                if (e.specificErrorCode === "No rows affected") {
+                    checkEmailTokenResponse.specificErrorCode = e.specificErrorCode;
+                }
+                else {
+                    checkEmailTokenResponse.specificErrorCode = e.specificErrorCode;
+                }
+                reject(e);
+                return;
+            }
+            try {
+                //Attempt to delete email token
+                await users_db_1.default.deleteEmailVerification(token);
+            }
+            catch (e) {
+                checkEmailTokenResponse.specificErrorCode = e.specificErrorCode;
                 reject(checkEmailTokenResponse);
+                return;
+            }
+            try {
+                //Change user verification status
+                await users_db_1.default.updateVerification(email);
+            }
+            catch (e) {
+                checkEmailTokenResponse.specificErrorCode = e.specificErrorCode;
+                reject(checkEmailTokenResponse);
+                return;
             }
         });
     };

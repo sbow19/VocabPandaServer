@@ -1,11 +1,10 @@
 import * as appTypes from "@appTypes/appTypes"
-import * as mysqlTypes from "mysql2"
 import * as apiTypes from '@appTypes/api'
 import mysql, { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import vpModel from "@shared/models/models_template";
 const UserBuffersDBPool = require("./user_buffers_pool");
 import preparedSQLStatements from "../prepared_statements";
-const UserDBPool = require("./users_db_pool");
+const UserDBPool = require("@shared/models/user_logins/users_db_pool");
 
 class UserBuffersDatabase extends vpModel {
 

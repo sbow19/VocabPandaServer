@@ -2,7 +2,7 @@ const express = require('express');
 import * as appTypes from '@appTypes/appTypes'
 import SyncProcess from '@shared/sync/sync';
 import * as apiTypes from '@appTypes/api'
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 const basicAuth = require("basic-auth");
 
 const usersRouter = express.Router();

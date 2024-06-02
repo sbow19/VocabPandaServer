@@ -1,13 +1,15 @@
 import * as appTypes from "@appTypes/appTypes";
+import * as apiTypes from '@appTypes/api';
 import vpModel from "@shared/models/models_template";
 declare class UserDetailsDatabase extends vpModel {
-    static addNewUserDetails(userCredentials: appTypes.UserCredentials, userId: string): Promise<appTypes.APIAccountOperationResponse>;
-    static updateUserSettings: (settingsObject: appTypes.UserSettings) => Promise<appTypes.APIOperationResponse>;
-    static upgradeToPremium(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>;
-    static downgradeToFree(username: string): Promise<appTypes.DBUpgradeResponseObject<appTypes.DBUpgradeResponseConfig>>;
-    static updateLastLoggedIn(username: string): Promise<appTypes.DBUpdateResponseObject<appTypes.DBUpdateResponseConfig>>;
+    static addNewUserDetails(userCredentials: apiTypes.APICreateAccount, userId: string, deviceId: string): Promise<appTypes.DBOperation>;
+    static updateUserSettings: (settingsObject: apiTypes.UserSettings) => Promise<appTypes.DBOperation>;
+    static getUserSettings: (userId: string) => Promise<appTypes.DBOperation<apiTypes.UserSettings>>;
+    static checkPremiumStatus: (userId: string) => Promise<appTypes.DBOperation<boolean>>;
+    static updateLastLoggedIn(userId: string): Promise<appTypes.DBOperation>;
     static checkTranslationsLeft(username: string): Promise<boolean>;
     static getTranslationTimeLeft(username: string): Promise<number>;
     static updateTranslationsLeft(username: string): Promise<appTypes.TranslationsLeft>;
+    static updatePlaysLeft(playsDetails: apiTypes.PlaysDetails): Promise<appTypes.DBOperation>;
 }
 export default UserDetailsDatabase;

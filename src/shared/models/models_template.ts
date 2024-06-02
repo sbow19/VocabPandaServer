@@ -2,17 +2,14 @@ import * as mysqlTypes from "mysql2"
 const {v4: uuidv4} = require('uuid');
 import * as appTypes from "@appTypes/appTypes"
 import preparedSQLStatements from "./prepared_statements";
-const mysql = require("mysql2/promise");
 const strftime = require("strftime");
 const dayjs = require("dayjs");
 const UserDBPool = require("./user_logins/users_db_pool");
 const UserDetailsDBPool = require("./user_details/user_details_pool");
 const UserContentDBPool = require("./user_content/user_content_pool");
-const UserBuffersDBPool = require("./user_content/user_buffers_pool");
-const UserSyncDBPool = require("./user_content/user_sync_pool");
-import UserBuffersDatabase from "./user_buffers/user_buffers_db";
+const UserBuffersDBPool = require("./user_buffers/user_buffers_pool");
+const UserSyncDBPool = require("./user_sync/user_sync_pool");
 import * as apiTypes from '@appTypes/api'
-import UsersContentDatabase from "./user_content/user_content_db";
 
 
 class vpModel {

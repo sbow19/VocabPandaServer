@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv").config();
 const cors = require('cors');
 const express = require('express');
-const authoriseRequest = require("@shared/misc/authorisation");
+const authoriseRequest = require("@shared/misc/authorisation/authorisation");
 const user_details_db_1 = __importDefault(require("@shared/models/user_details/user_details_db"));
 const DeeplAPI = express.Router();
 DeeplAPI.use(express.json());

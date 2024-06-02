@@ -4,19 +4,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const schedule = require("node-schedule");
-const refresh_1 = __importDefault(require("@shared/updates/refresh/refresh"));
+const refresh_1 = __importDefault(require("@shared/cron/refresh/refresh"));
 const email_verification_1 = __importDefault(require("./email/email_verification"));
 class CronClass {
     static runCronJobs() {
         //Check refresh counters
         schedule.scheduleJob("* * * * *", function () {
-            refresh_1.default.gameRefreshChecker()
+            refresh_1.default.playsRefreshChecker()
                 .then(log => {
                 //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Game refresh check");
+                CronClass.#recordChangesLog(log, "Plays refresh check");
             })
                 .catch(error => {
-                CronClass.#recordErrorsLog(error, "Game refresh check");
+                CronClass.#recordErrorsLog(error, "Plays refresh check");
                 //Record error log.
             });
         });
@@ -31,7 +31,7 @@ class CronClass {
                 //Record error log.
             });
         });
-        schedule.scheduleJob("* * * * *", function () {
+        schedule.scheduleJob("*/30 * * * *", function () {
             refresh_1.default.premiumUserChecker()
                 .then(log => {
                 //Record log of changes in database
@@ -59,6 +59,7 @@ class CronClass {
     }
     ;
     static #recordChangesLog(log, changeType) {
+        console.log(log, changeType);
         return;
     }
     static #recordErrorsLog(error, errorType) {

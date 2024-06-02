@@ -7,7 +7,7 @@ require("dotenv").config();
 const uuid = require("uuid");
 require("module-alias/register");
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
-const cron_1 = __importDefault(require("@shared/updates/cron"));
+const cron_1 = __importDefault(require("@shared/cron/cron"));
 const express_1 = __importDefault(require("express"));
 const cors = require('cors');
 // //PATH TO SSL CERTIFICATE AND KEY HERE 
@@ -23,43 +23,45 @@ cron_1.default.runCronJobs();
 vocabpandaserver.use(express_1.default.json());
 //Generate device api_key
 vocabpandaserver.post("/generateapikey", async (req, res) => {
+    const generateAPIKeyResponse = {
+        success: false,
+        operationType: "API Key",
+        APIKey: ""
+    };
     try {
-        console.log(req);
+        const generateAPIKeyRequest = req.body;
         //Get database connection
-        const dbConnection = await users_db_1.default.getUsersDBConnection(); //Implement some kind of db pooling under the hood
-        dbConnection.mysqlConnection?.beginTransaction(err => { throw err; });
-        const deviceId = req.body.deviceId;
+        const dbConnection = await users_db_1.default.getUsersDBConnection();
+        await dbConnection.mysqlConnection?.beginTransaction();
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`;
-        const [queryResult] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, deviceId);
+        const [queryResult,] = await dbConnection.mysqlConnection?.query(deviceIdSqlQuery, generateAPIKeyRequest.deviceId);
         if (queryResult.length === 0) {
             //new API key
             const newAPIKey = uuid.v4();
-            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?, ?, ?);`; //api_key, device_id, user_id, public_key, private_key
+            const addNewDeviceSqlQuery = `INSERT INTO api_keys VALUES (?, ?, ?, ?, ?, ?);`; //api_key, device_id, user_id, public_key, private_key, device_type
             await dbConnection.mysqlConnection?.query(addNewDeviceSqlQuery, [
                 newAPIKey,
-                deviceId,
+                generateAPIKeyRequest.deviceId,
                 null,
                 null,
-                null
+                null,
+                generateAPIKeyRequest.deviceType
             ]);
             dbConnection.mysqlConnection?.commit();
-            res.status(200).send({
-                message: "Device id does not exist... generated new api key",
-                APIKey: newAPIKey
-            });
+            generateAPIKeyResponse.APIKey = newAPIKey;
+            generateAPIKeyResponse.success = true;
+            res.status(200).send(generateAPIKeyResponse);
         }
         else if (queryResult.length > 0) {
-            res.status(200).send({
-                message: "Device id already exists.",
-                APIKey: queryResult[0].api_key
-            });
+            generateAPIKeyResponse.APIKey = queryResult[0].api_key;
+            res.status(200).send(generateAPIKeyResponse);
         }
         ;
     }
     catch (e) {
         console.log(e);
         //Error occurs while handling request. 
-        res.status(500).send(e);
+        res.status(500).send(generateAPIKeyResponse);
     }
 });
 //Redirect to main website routing

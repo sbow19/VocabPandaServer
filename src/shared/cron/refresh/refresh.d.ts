@@ -1,8 +1,7 @@
 import * as appTypes from "@appTypes/appTypes";
 declare class RefreshCounter {
-    constructor();
-    static gameRefreshChecker(): Promise<appTypes.refreshErrorResponse>;
-    static translationsRefreshChecker(): Promise<appTypes.refreshErrorResponse>;
-    static premiumUserChecker(): Promise<appTypes.refreshErrorResponse>;
+    static playsRefreshChecker(): Promise<appTypes.DBOperation>;
+    static translationsRefreshChecker(): Promise<appTypes.DBOperation>;
+    static premiumUserChecker(): Promise<appTypes.DBOperation>;
 }
 export default RefreshCounter;

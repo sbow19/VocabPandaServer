@@ -1,4 +1,3 @@
-import { extend } from "dayjs"
 import * as mysql from "mysql2/promise"
 import * as apiTypes from '@appTypes/api'
 

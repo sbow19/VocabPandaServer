@@ -153,6 +153,7 @@ import * as apiTypes from '@appTypes/api'
         | "Get Premium Status"
         | "Get Verification Status"
         | "Update Last Logged In"
+        | "Authorisation"
 
         //DB Content Operations
         |"DB Plays Operation"

@@ -5,6 +5,7 @@ import VocabPandaEmail from "@shared/misc/verification/email";
 import * as appTypes from "@appTypes/appTypes";
 import * as apiTypes from "@appTypes/api";
 import { Request } from "express";
+import logger from "@shared/log/logger";
 const bycrypt = require("bcrypt");
 const basicAuth = require("basic-auth");
 const authoriseRequest = require("@shared/misc/authorisation/authorisation");
@@ -75,6 +76,7 @@ AccountRouter.post("/createaccount", async(req: apiTypes.CreateAccountCall, res:
         success: false
     }
 
+    console.log(req.body.requestId)
     
     try {
         const salt = await bycrypt.genSalt();
@@ -93,10 +95,8 @@ AccountRouter.post("/createaccount", async(req: apiTypes.CreateAccountCall, res:
     try {
 
         //Add new user to user_logins db. Verification checks undertaken within function.
-        const addUserResponse = await UsersDatabase.createNewUser(userCreds, credentials); 
+        await UsersDatabase.createNewUser(userCreds, credentials); 
 
-        //Then we can move onto adding the users details.
-        await UserDetailsDatabase.addNewUserDetails(userCreds, addUserResponse.resultArray, credentials.name); //Create new user returns  user id in .add.message property
     
     }catch(e){
 
@@ -110,6 +110,8 @@ AccountRouter.post("/createaccount", async(req: apiTypes.CreateAccountCall, res:
             createAccountResponse.ErrorType = "Miscellaneous error";
             res.status(500).send(createAccountResponse);
         }
+
+        logger.error(JSON.stringify(e))
 
         return 
     
@@ -133,6 +135,8 @@ AccountRouter.post("/createaccount", async(req: apiTypes.CreateAccountCall, res:
         }catch(e){
             //Some error deleting the account details
         }
+
+        logger.error(JSON.stringify(e))
 
         return
     }

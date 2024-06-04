@@ -6,66 +6,49 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const schedule = require("node-schedule");
 const refresh_1 = __importDefault(require("@shared/cron/refresh/refresh"));
 const email_verification_1 = __importDefault(require("./email/email_verification"));
+const logger_1 = __importDefault(require("@shared/log/logger"));
 class CronClass {
     static runCronJobs() {
         //Check refresh counters
         schedule.scheduleJob("* * * * *", function () {
             refresh_1.default.playsRefreshChecker()
                 .then(log => {
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Plays refresh check");
+                logger_1.default.info(JSON.stringify(log));
             })
                 .catch(error => {
-                CronClass.#recordErrorsLog(error, "Plays refresh check");
-                //Record error log.
+                logger_1.default.error(JSON.stringify(error));
             });
         });
         schedule.scheduleJob("* * * * *", function () {
             refresh_1.default.translationsRefreshChecker()
                 .then(log => {
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Translation refresh check");
+                logger_1.default.info(JSON.stringify(log));
             })
                 .catch(error => {
-                CronClass.#recordErrorsLog(error, "Translation refresh check");
-                //Record error log.
+                logger_1.default.error(JSON.stringify(error));
             });
         });
         schedule.scheduleJob("*/30 * * * *", function () {
             refresh_1.default.premiumUserChecker()
                 .then(log => {
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Premium check");
+                logger_1.default.info(JSON.stringify(log));
             })
                 .catch(error => {
-                CronClass.#recordErrorsLog(error, "Premium check");
-                //Record error log.
+                logger_1.default.error(JSON.stringify(error));
             });
         });
         //Check email verification list
         schedule.scheduleJob("* * * *", function () {
             email_verification_1.default.CheckUnverifiedEmails()
                 .then(log => {
-                //TODO: send ping to device to delete login details
-                //Schedule ping for when the device is next talking to the backend. 
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "email verification check");
+                logger_1.default.info(JSON.stringify(log));
             })
                 .catch((error) => {
-                CronClass.#recordErrorsLog(error, "email verification check");
-                //Record error log.
+                logger_1.default.error(JSON.stringify(error));
             });
         });
     }
     ;
-    static #recordChangesLog(log, changeType) {
-        console.log(log, changeType);
-        return;
-    }
-    static #recordErrorsLog(error, errorType) {
-        console.log(error.stack, error.message);
-        return;
-    }
 }
 exports.default = CronClass;
 //# sourceMappingURL=cron.js.map

@@ -21,10 +21,11 @@ class UsersDatabase extends models_template_1.default {
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                await connectionResponseObject.mysqlConnection?.beginTransaction();
+                console.log("Beginning new transaction");
                 try {
                     //New user id
                     const newUserId = super.generateUUID();
-                    await connectionResponseObject.mysqlConnection?.beginTransaction();
                     await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addAccount, [
                         newUserId,
                         userCredentials.username,
@@ -37,13 +38,15 @@ class UsersDatabase extends models_template_1.default {
                         deviceCredentials.pass,
                         deviceCredentials.name
                     ]);
+                    //Then we can move onto adding the users details.
+                    await user_details_db_1.default.addNewUserDetails(userCredentials, newUserId, deviceCredentials.name);
                     connectionResponseObject.mysqlConnection?.commit();
                     createUserResponse.success = true;
-                    createUserResponse.resultArray = newUserId; //Send the user id back to add new details
                     resolve(createUserResponse);
                 }
                 catch (e) {
                     //If the username or email already exists, then we will get a duplicate error
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, creating new user", e);
                     const sqlError = e;
                     throw sqlError;
@@ -81,9 +84,9 @@ class UsersDatabase extends models_template_1.default {
             };
             try {
                 const dbConnection = await super.getUsersDBConnection(); //Get connection to user_logins table
+                dbConnection.mysqlConnection?.beginTransaction();
                 try {
-                    dbConnection.mysqlConnection?.beginTransaction();
-                    const [databaseResult,] = await dbConnection.mysqlConnection?.query(prepared_statements_1.default.generalStatements.userIdMatch, [
+                    const [databaseResult,] = await dbConnection.mysqlConnection.query(prepared_statements_1.default.generalStatements.userIdMatch, [
                         userCredentials.userId,
                         userCredentials.userId
                     ]);
@@ -96,7 +99,7 @@ class UsersDatabase extends models_template_1.default {
                         return;
                     }
                     //IF match found in checking for users, then account can be deleted. 
-                    const [queryResult,] = await dbConnection.mysqlConnection?.query(prepared_statements_1.default.accountStatements.deleteAccount, [
+                    const [queryResult,] = await dbConnection.mysqlConnection.query(prepared_statements_1.default.accountStatements.deleteAccount, [
                         userCredentials.userId,
                         userCredentials.userId
                     ]);
@@ -113,6 +116,7 @@ class UsersDatabase extends models_template_1.default {
                 }
                 catch (e) {
                     //If the username or email already exists, then we will get a duplicate error
+                    dbConnection.mysqlConnection?.rollback();
                     console.log("SQL ERROR, deleting user", e);
                     const sqlError = e;
                     throw sqlError;
@@ -146,8 +150,8 @@ class UsersDatabase extends models_template_1.default {
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                connectionResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    connectionResponseObject.mysqlConnection?.beginTransaction();
                     const [databaseResult,] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.generalStatements.userIdMatch, accountObject.userId);
                     //if there is a positive match, then the user exists, we will then check the hash    
                     if (await bcrypt.compare(accountObject.oldPassword, databaseResult[0].password_hash)) {
@@ -173,6 +177,7 @@ class UsersDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, changing password", e);
                     const sqlError = e;
                     throw sqlError;
@@ -194,6 +199,7 @@ class UsersDatabase extends models_template_1.default {
             }
         });
     }
+    //
     static isCorrectPassword(loginResult) {
         return new Promise(async (resolve, reject) => {
             const correctPasswordResponse = {
@@ -205,8 +211,7 @@ class UsersDatabase extends models_template_1.default {
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
                 try {
-                    connectionResponseObject.mysqlConnection?.beginTransaction();
-                    const [databaseResult,] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.generalStatements.usersUsernameMatch, loginResult.username);
+                    const [databaseResult,] = await connectionResponseObject.mysqlConnection.query(prepared_statements_1.default.generalStatements.usersUsernameMatch, loginResult.username);
                     if (databaseResult.length === 0) {
                         //Both tables need to be updated
                         correctPasswordResponse.specificErrorCode = "No rows affected";
@@ -246,6 +251,55 @@ class UsersDatabase extends models_template_1.default {
             }
         });
     }
+    static areCredentialsCorrect(credentials) {
+        return new Promise(async (resolve, reject) => {
+            const authResponse = {
+                success: false,
+                operationType: "Authorisation",
+                specificErrorCode: "",
+                resultArray: null
+            };
+            try {
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                try {
+                    const [databaseResult,] = await connectionResponseObject.mysqlConnection.query(prepared_statements_1.default.generalStatements.getDeviceCredentials, [
+                        credentials.pass,
+                        credentials.name
+                    ]);
+                    if (databaseResult.length === 0) {
+                        //Both tables need to be updated
+                        authResponse.specificErrorCode = "No rows affected";
+                        reject(authResponse);
+                    }
+                    else if (databaseResult.length === 1) {
+                        //if there is a positive match, then the user exists, we will then check the hash    
+                        authResponse.success = true;
+                        resolve(authResponse);
+                    }
+                }
+                catch (e) {
+                    console.log("SQL ERROR, Fetching device credentials", e);
+                    const sqlError = e;
+                    throw sqlError;
+                }
+                finally {
+                    //release pool connection
+                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                }
+            }
+            catch (e) {
+                if (e.code) {
+                    authResponse.specificErrorCode = e.code;
+                    reject(authResponse);
+                }
+                else {
+                    authResponse.specificErrorCode = "Unknown error";
+                    reject(authResponse);
+                }
+            }
+        });
+    }
+    //Check API credentials
     //Save email verification token
     static saveEmailVerification(token, email) {
         return new Promise(async (resolve, reject) => {
@@ -257,6 +311,7 @@ class UsersDatabase extends models_template_1.default {
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                connectionResponseObject.mysqlConnection?.beginTransaction();
                 try {
                     //Get token expiry (1 hour);
                     const tokenExpiry = super.getTokenExpiry();
@@ -271,6 +326,7 @@ class UsersDatabase extends models_template_1.default {
                 }
                 catch (e) {
                     //If the username or email already exists, then we will get a duplicate error
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, error saving email token", e);
                     const sqlError = e;
                     throw sqlError;
@@ -352,6 +408,7 @@ class UsersDatabase extends models_template_1.default {
             };
             try {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                connectionResponseObject.mysqlConnection?.beginTransaction();
                 try {
                     //delete token, email, and token expiry
                     const [deleteResponse,] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.deleteEmailVerificationToken, [
@@ -367,6 +424,7 @@ class UsersDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, delete email token", e);
                     const sqlError = e;
                     throw sqlError;
@@ -398,7 +456,8 @@ class UsersDatabase extends models_template_1.default {
                 operationType: "Update Verification Status"
             };
             try {
-                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins tabl
+                connectionResponseObject.mysqlConnection?.beginTransaction();
                 try {
                     //Update user verification status here
                     const [updateResult,] = await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.updateVerificationStatus, [
@@ -414,6 +473,7 @@ class UsersDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, update verification status", e);
                     const sqlError = e;
                     throw sqlError;
@@ -449,12 +509,9 @@ class UsersDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-                    const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.getVerificationStatus, [
+                    const [queryResponse,] = await dbResponseObject.mysqlConnection.query(prepared_statements_1.default.accountStatements.getVerificationStatus, [
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     if (queryResponse.affectedRows === 0) {
                         //No user found 
                         reject(fetchResult);

@@ -10,6 +10,7 @@ const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"
 const cron_1 = __importDefault(require("@shared/cron/cron"));
 const express_1 = __importDefault(require("express"));
 const cors = require('cors');
+const logger_1 = __importDefault(require("@shared/log/logger"));
 // //PATH TO SSL CERTIFICATE AND KEY HERE 
 // const options = {
 //     key: fs.readFileSync("C:\\Users\\lenovo\\Desktop\\Dev\\projects\\VP\\https\\dev_ssl\\server.key"),
@@ -28,9 +29,8 @@ vocabpandaserver.post("/generateapikey", async (req, res) => {
         operationType: "API Key",
         APIKey: ""
     };
+    const generateAPIKeyRequest = req.body;
     try {
-        const generateAPIKeyRequest = req.body;
-        //Get database connection
         const dbConnection = await users_db_1.default.getUsersDBConnection();
         await dbConnection.mysqlConnection?.beginTransaction();
         const deviceIdSqlQuery = `SELECT * FROM api_keys WHERE device_id = ?;`;
@@ -50,16 +50,19 @@ vocabpandaserver.post("/generateapikey", async (req, res) => {
             dbConnection.mysqlConnection?.commit();
             generateAPIKeyResponse.APIKey = newAPIKey;
             generateAPIKeyResponse.success = true;
+            logger_1.default.info("New API key generated for device id: " + generateAPIKeyRequest.deviceId + " and device" + generateAPIKeyRequest.deviceId);
             res.status(200).send(generateAPIKeyResponse);
         }
         else if (queryResult.length > 0) {
+            logger_1.default.info("API key already exists for device id: " + generateAPIKeyRequest.deviceId + " and device" + generateAPIKeyRequest.deviceId);
+            generateAPIKeyResponse.success = true;
             generateAPIKeyResponse.APIKey = queryResult[0].api_key;
             res.status(200).send(generateAPIKeyResponse);
         }
         ;
     }
     catch (e) {
-        console.log(e);
+        logger_1.default.error("Error occurred while generating API key for device id: " + generateAPIKeyRequest.deviceId);
         //Error occurs while handling request. 
         res.status(500).send(generateAPIKeyResponse);
     }

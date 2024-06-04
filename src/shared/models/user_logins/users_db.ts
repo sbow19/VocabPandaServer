@@ -1,6 +1,7 @@
 import * as appTypes from "@appTypes/appTypes"
 import * as apiTypes from "@appTypes/api"
 import vpModel from "@shared/models/models_template";
+import { BasicAuthResult } from "basic-auth";
 import preparedSQLStatements from "../prepared_statements";
 import UserDetailsDatabase from '@shared/models/user_details/user_details_db';
 import mysql, {ResultSetHeader, RowDataPacket} from 'mysql2/promise'
@@ -12,7 +13,7 @@ class UsersDatabase extends vpModel {
 
 
     //Create new user + connection and match attempt
-    static createNewUser(userCredentials: apiTypes.APICreateAccount, deviceCredentials): Promise<appTypes.DBOperation<string>>{
+    static createNewUser(userCredentials: apiTypes.APICreateAccount, deviceCredentials: BasicAuthResult): Promise<appTypes.DBOperation<string>>{
 
         //Attempt to get db connection
         return new Promise(async(resolve, reject)=>{
@@ -25,17 +26,20 @@ class UsersDatabase extends vpModel {
                 specificErrorCode: ""
             };
 
+
             try{
 
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                await connectionResponseObject.mysqlConnection?.beginTransaction();
+
+                console.log("Beginning new transaction")
 
                 try{
                     
                     //New user id
                     const newUserId = super.generateUUID();
 
-                    await connectionResponseObject.mysqlConnection?.beginTransaction();
-                    
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addAccount,
                         [
@@ -54,16 +58,20 @@ class UsersDatabase extends vpModel {
                         deviceCredentials.name
                     ])
 
-                    connectionResponseObject.mysqlConnection?.commit();
                 
+                    //Then we can move onto adding the users details.
+                    await UserDetailsDatabase.addNewUserDetails(userCredentials, newUserId, deviceCredentials.name); 
+
+
+                    connectionResponseObject.mysqlConnection?.commit();
 
                     createUserResponse.success = true;
-                    createUserResponse.resultArray = newUserId; //Send the user id back to add new details
-
+        
                     resolve(createUserResponse);
                         
                 }catch(e){
                     //If the username or email already exists, then we will get a duplicate error
+                    connectionResponseObject.mysqlConnection?.rollback()
                     console.log("SQL ERROR, creating new user", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -109,12 +117,10 @@ class UsersDatabase extends vpModel {
 
                 const dbConnection = await super.getUsersDBConnection(); //Get connection to user_logins table
 
-                try{
+                dbConnection.mysqlConnection?.beginTransaction()
 
-                    dbConnection.mysqlConnection?.beginTransaction()
-                    
-    
-                    const [databaseResult, ] = await dbConnection.mysqlConnection?.query<RowDataPacket[]>(
+                try{
+                    const [databaseResult, ] = await dbConnection.mysqlConnection.query<RowDataPacket[]>(
                         preparedSQLStatements.generalStatements.userIdMatch
                         , 
                         [
@@ -135,7 +141,7 @@ class UsersDatabase extends vpModel {
 
                     //IF match found in checking for users, then account can be deleted. 
                 
-                    const [queryResult, ] = await dbConnection.mysqlConnection?.query<ResultSetHeader>(
+                    const [queryResult, ] = await dbConnection.mysqlConnection.query<ResultSetHeader>(
                         preparedSQLStatements.accountStatements.deleteAccount, 
                         [
                             userCredentials.userId,
@@ -158,6 +164,7 @@ class UsersDatabase extends vpModel {
 
                 }catch(e){
                     //If the username or email already exists, then we will get a duplicate error
+                    dbConnection.mysqlConnection?.rollback();
                     console.log("SQL ERROR, deleting user", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -198,10 +205,10 @@ class UsersDatabase extends vpModel {
 
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
+                connectionResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
-                             
-                    connectionResponseObject.mysqlConnection?.beginTransaction();
-                    
+
     
                     const [databaseResult, ] = await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.generalStatements.userIdMatch
@@ -241,6 +248,7 @@ class UsersDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, changing password", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -264,6 +272,7 @@ class UsersDatabase extends vpModel {
         })
     }
 
+    //
     static isCorrectPassword(loginResult: apiTypes.LoginResult): Promise<appTypes.DBOperation>{
         return new Promise(async(resolve, reject)=>{
 
@@ -281,11 +290,8 @@ class UsersDatabase extends vpModel {
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
                 try{
-                             
-                    connectionResponseObject.mysqlConnection?.beginTransaction();
-                    
-    
-                    const [databaseResult, ] = await connectionResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                        
+                    const [databaseResult, ] = await connectionResponseObject.mysqlConnection.query<RowDataPacket[]>(
                         preparedSQLStatements.generalStatements.usersUsernameMatch
                         , 
                         loginResult.username);
@@ -332,6 +338,71 @@ class UsersDatabase extends vpModel {
         })
     }
 
+    static areCredentialsCorrect(credentials: BasicAuthResult): Promise<appTypes.DBOperation>{
+        return new Promise(async(resolve, reject)=>{
+
+            const authResponse: appTypes.DBOperation = {
+                success: false,
+                operationType: "Authorisation",
+                specificErrorCode: "",
+                resultArray: null
+            };
+
+            try{
+
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                try{
+                             
+    
+    
+                    const [databaseResult, ] = await connectionResponseObject.mysqlConnection.query<RowDataPacket[]>(
+                        preparedSQLStatements.generalStatements.getDeviceCredentials, 
+                        [
+                            credentials.pass,
+                            credentials.name
+                        ]
+                    );
+                    
+                    
+                    if(databaseResult.length === 0){
+                        //Both tables need to be updated
+                        authResponse.specificErrorCode = "No rows affected";
+                        reject(authResponse);
+
+                    } else if (databaseResult.length === 1){
+                        //if there is a positive match, then the user exists, we will then check the hash    
+                    
+                        authResponse.success = true;
+                        resolve(authResponse)
+                    }
+
+                }catch(e){
+                    console.log("SQL ERROR, Fetching device credentials", e)
+                    const sqlError = e as mysql.QueryError;
+                    throw sqlError;
+
+                }finally{
+                    //release pool connection
+                    UserDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                } 
+
+            }catch(e){
+
+                if (e.code){
+                    authResponse.specificErrorCode = e.code;
+                    reject(authResponse);
+                }else{
+                    authResponse.specificErrorCode = "Unknown error";
+                    reject(authResponse);
+                }
+                
+            }
+        })
+    }
+
+    //Check API credentials
+
     //Save email verification token
     static saveEmailVerification(token: string, email: string): Promise<appTypes.DBOperation>{
         return new Promise(async(resolve, reject)=>{
@@ -346,6 +417,8 @@ class UsersDatabase extends vpModel {
             try{
 
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
+
+                connectionResponseObject.mysqlConnection?.beginTransaction();
 
                 try{
 
@@ -367,6 +440,7 @@ class UsersDatabase extends vpModel {
 
                 }catch(e){
                     //If the username or email already exists, then we will get a duplicate error
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, error saving email token", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -469,6 +543,8 @@ class UsersDatabase extends vpModel {
 
                 const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
 
+                connectionResponseObject.mysqlConnection?.beginTransaction();
+
 
                 try{
                     //delete token, email, and token expiry
@@ -490,6 +566,7 @@ class UsersDatabase extends vpModel {
                     
 
                 }catch(e){
+                    connectionResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, delete email token", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -525,8 +602,8 @@ class UsersDatabase extends vpModel {
 
             try{
 
-                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins table
-
+                const connectionResponseObject = await super.getUsersDBConnection(); //Get connection to user_logins tabl
+                connectionResponseObject.mysqlConnection?.beginTransaction()
                 try{
 
                     //Update user verification status here
@@ -547,6 +624,7 @@ class UsersDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    connectionResponseObject.mysqlConnection?.rollback()
                     console.log("SQL ERROR, update verification status", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -587,17 +665,15 @@ class UsersDatabase extends vpModel {
                 const dbResponseObject = await super.getUsersDBConnection();
 
                 try{
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+                    
 
-                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection.query<RowDataPacket[]>(
                         preparedSQLStatements.accountStatements.getVerificationStatus,
                         [
                             userId
                         ]
                     )
                     
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
                     if(queryResponse.affectedRows === 0){
                         //No user found 
@@ -643,8 +719,6 @@ class UsersDatabase extends vpModel {
     //Get account details
     static getAccountDetails = (userId: string): Promise<appTypes.DBOperation<apiTypes.AccountDetails>>=>{
         return new Promise(async(resolve, reject)=>{
-
-
 
             const getAccountDetailsResponse: appTypes.DBOperation<apiTypes.AccountDetails> = {
                 success: false,

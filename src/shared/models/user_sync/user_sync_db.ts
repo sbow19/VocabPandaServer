@@ -100,10 +100,7 @@ class UserSyncDatabase extends vpModel {
                 
                 try{
 
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
-                    const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                    const [queryResponse, ] = await dbResponseObject.mysqlConnection.query<RowDataPacket[]>(
                         preparedSQLStatements.syncStatements.checkUserSyncFlag,
                         [
                             userId,
@@ -111,7 +108,6 @@ class UserSyncDatabase extends vpModel {
                         ]
                     );
 
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
                     //Check affected rows
                     if(queryResponse.length === 0){

@@ -5,8 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express = require('express');
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
-const user_details_db_1 = __importDefault(require("@shared/models/user_details/user_details_db"));
 const email_1 = __importDefault(require("@shared/misc/verification/email"));
+const logger_1 = __importDefault(require("@shared/log/logger"));
 const bycrypt = require("bcrypt");
 const basicAuth = require("basic-auth");
 const authoriseRequest = require("@shared/misc/authorisation/authorisation");
@@ -54,6 +54,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
     const createAccountResponse = {
         success: false
     };
+    console.log(req.body.requestId);
     try {
         const salt = await bycrypt.genSalt();
         hashedPassword = await bycrypt.hash(userCreds.password, salt);
@@ -66,9 +67,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
     }
     try {
         //Add new user to user_logins db. Verification checks undertaken within function.
-        const addUserResponse = await users_db_1.default.createNewUser(userCreds, credentials);
-        //Then we can move onto adding the users details.
-        await user_details_db_1.default.addNewUserDetails(userCreds, addUserResponse.resultArray, credentials.name); //Create new user returns  user id in .add.message property
+        await users_db_1.default.createNewUser(userCreds, credentials);
     }
     catch (e) {
         if (e.code === "ER_DUP_UNIQUE") {
@@ -81,6 +80,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
             createAccountResponse.ErrorType = "Miscellaneous error";
             res.status(500).send(createAccountResponse);
         }
+        logger_1.default.error(JSON.stringify(e));
         return;
     }
     try {
@@ -99,6 +99,7 @@ AccountRouter.post("/createaccount", async (req, res) => {
         catch (e) {
             //Some error deleting the account details
         }
+        logger_1.default.error(JSON.stringify(e));
         return;
     }
     createAccountResponse.success = true;

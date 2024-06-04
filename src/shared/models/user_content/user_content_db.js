@@ -97,15 +97,12 @@ class UsersContentDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [projects,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.projectStatements.getAllProjects, [
                         userId
                     ]);
                     const [entries,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.entryStatements.getAllEntries, [
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     getAllContentResponse.resultArray.entries = entries;
                     getAllContentResponse.resultArray.projects = projects;
                     resolve(getAllContentResponse);
@@ -142,9 +139,9 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.projectStatements.addNewProject, [
                         newProjectDetails.userId,
                         newProjectDetails.projectName,
@@ -164,6 +161,7 @@ class UsersContentDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, inserting project", e);
                     const sqlError = e;
                     throw sqlError;
@@ -195,9 +193,9 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.projectStatements.deleteProject, [
                         deleteProjectDetails.userId,
                         deleteProjectDetails.projectName
@@ -213,6 +211,7 @@ class UsersContentDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, deleting project", e);
                     const sqlError = e;
                     throw sqlError;
@@ -244,9 +243,9 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     //Add new user details
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.entryStatements.addNewEntry, [
                         newEntryObject.userId,
@@ -274,6 +273,7 @@ class UsersContentDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, inserting entry", e);
                     const sqlError = e;
                     throw sqlError;
@@ -306,9 +306,8 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.entryStatements.updateEntry, [
                         updateEntryObject.targetLanguageText,
                         updateEntryObject.targetLanguage,
@@ -331,6 +330,7 @@ class UsersContentDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating entry", e);
                     const sqlError = e;
                     throw sqlError;
@@ -363,9 +363,9 @@ class UsersContentDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                //Begin transaction  
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction  
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.entryStatements.deleteEntry, entryObject.entryId);
                     await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     //Check affected rows
@@ -380,6 +380,7 @@ class UsersContentDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating entry", e);
                     const sqlError = e;
                     throw sqlError;

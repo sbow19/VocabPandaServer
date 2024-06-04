@@ -1,24 +1,30 @@
 const schedule = require("node-schedule");
 import RefreshCounter from "@shared/cron/refresh/refresh";
 import EmailVerificationChecker from "./email/email_verification";
+import logger from "@shared/log/logger";
 
 class CronClass {
 
     static runCronJobs(){
+
 
         //Check refresh counters
         schedule.scheduleJob("* * * * *", function(){
             RefreshCounter.playsRefreshChecker()
             .then(log=>{
 
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Plays refresh check");
+                logger.info(
+                    JSON.stringify(log)
+                )
+                
             })
             .catch(error=>{
 
-                CronClass.#recordErrorsLog(error, "Plays refresh check");
+                logger.error(
+                    JSON.stringify(error)
+                )
 
-                //Record error log.
+            
             })
         });
 
@@ -26,15 +32,18 @@ class CronClass {
             RefreshCounter.translationsRefreshChecker()
             .then(log=>{
 
-                //Record log of changes in database
+                logger.info(
+                    JSON.stringify(log)
+                )
 
-                CronClass.#recordChangesLog(log, "Translation refresh check");
+               
             })
             .catch(error=>{
 
-                CronClass.#recordErrorsLog(error, "Translation refresh check");
+                logger.error(
+                    JSON.stringify(error)
+                )
 
-                //Record error log.
             })
         });
 
@@ -42,13 +51,20 @@ class CronClass {
             RefreshCounter.premiumUserChecker()
             .then(log=>{
 
-                //Record log of changes in database
-                CronClass.#recordChangesLog(log, "Premium check");
+                logger.info(
+                    JSON.stringify(log)
+                )
+
+        
             })
             .catch(error=>{
 
-                CronClass.#recordErrorsLog(error, "Premium check");
-                //Record error log.
+                logger.error(
+                    JSON.stringify(error)
+                )
+
+
+                
             })
         });
 
@@ -57,32 +73,20 @@ class CronClass {
             EmailVerificationChecker.CheckUnverifiedEmails()
             .then(log=>{
 
-                //TODO: send ping to device to delete login details
-                //Schedule ping for when the device is next talking to the backend. 
+                logger.info(
+                    JSON.stringify(log)
+                )
 
-                //Record log of changes in database
-
-                CronClass.#recordChangesLog(log, "email verification check");
+                
             })
             .catch((error: Error)=>{
 
-                CronClass.#recordErrorsLog(error, "email verification check");
-
-                //Record error log.
+                logger.error(
+                    JSON.stringify(error)
+                )
             })
         })
     };
-
-    static #recordChangesLog(log, changeType){
-
-        console.log(log, changeType)
-        return
-    }
-
-    static #recordErrorsLog(error: Error, errorType){
-        console.log(error.stack, error.message);
-        return
-    }
 
 
 }

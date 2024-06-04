@@ -84,13 +84,10 @@ class UserSyncDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUserSyncDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-                    const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.syncStatements.checkUserSyncFlag, [
+                    const [queryResponse,] = await dbResponseObject.mysqlConnection.query(prepared_statements_1.default.syncStatements.checkUserSyncFlag, [
                         userId,
                         deviceId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     //Check affected rows
                     if (queryResponse.length === 0) {
                         //No user found

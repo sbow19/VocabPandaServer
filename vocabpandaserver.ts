@@ -9,6 +9,7 @@ import CronClass from "@shared/cron/cron";
 import express from 'express';
 import { RowDataPacket } from "mysql2";
 const cors = require('cors');
+import logger from "@shared/log/logger";
 
 
 // //PATH TO SSL CERTIFICATE AND KEY HERE 
@@ -37,12 +38,9 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
         APIKey: ""
     }
 
+    const generateAPIKeyRequest: apiTypes.APIGenerateKeyRequest = req.body;
+    
     try{
-
-        const generateAPIKeyRequest: apiTypes.APIGenerateKeyRequest = req.body;
-
-        //Get database connection
-
         const dbConnection = await UsersDatabase.getUsersDBConnection();
 
         await dbConnection.mysqlConnection?.beginTransaction();
@@ -74,11 +72,14 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
             generateAPIKeyResponse.APIKey = newAPIKey;
             generateAPIKeyResponse.success = true;
+            logger.info("New API key generated for device id: " + generateAPIKeyRequest.deviceId + " and device" + generateAPIKeyRequest.deviceId);
 
             res.status(200).send(generateAPIKeyResponse);
 
         } else if (queryResult.length > 0){
 
+            logger.info("API key already exists for device id: " + generateAPIKeyRequest.deviceId + " and device" + generateAPIKeyRequest.deviceId);
+            generateAPIKeyResponse.success = true;
             generateAPIKeyResponse.APIKey = queryResult[0].api_key;
             res.status(200).send(generateAPIKeyResponse);
 
@@ -87,15 +88,13 @@ vocabpandaserver.post("/generateapikey", async(req, res)=>{
 
     }catch(e){
 
-        console.log(e);
-
+        logger.error("Error occurred while generating API key for device id: " + generateAPIKeyRequest.deviceId)
         //Error occurs while handling request. 
         res.status(500).send(generateAPIKeyResponse);
 
     }
 
 });
-
 
 //Redirect to main website routing
 vocabpandaserver.use('/', require("./src/website/routes/main.js"));

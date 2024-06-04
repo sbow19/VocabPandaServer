@@ -42,6 +42,7 @@ declare const preparedSQLStatements: {
         getPasswordHash: string;
         updatePlays: string;
         updatePlaysRefreshTime: string;
+        getDeviceCredentials: string;
     };
     translationsStatements: {
         checkTranslationsLeft: string;

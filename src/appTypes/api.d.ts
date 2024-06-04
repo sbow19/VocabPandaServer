@@ -17,6 +17,7 @@ export type APICallBase = {
     | "login"
     | "verify email"
     | "API Key"
+    | "Authentication"
     requestId: string
     requestTimeStamp: string
     userId: string
@@ -217,6 +218,7 @@ export interface BackendOperationResponse<T = null> extends APICallBase {
     | "Invalid token"
     | "Password incorrect"
     | "User not verified"
+    | "Device not authorised"
 }
 
 export interface APITranslateResponse extends BackendOperationResponse {

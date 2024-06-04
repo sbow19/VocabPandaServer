@@ -6,6 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const users_db_1 = __importDefault(require("@shared/models/user_logins/users_db"));
 const basicAuth = require("basic-auth");
 const authoriseRequest = async (req, res, next) => {
+    const authenticationOperation = {
+        requestId: req.body.requestId,
+        success: false,
+        operationType: "Authentication",
+        errorType: "Device not authorised"
+    };
     try {
         // console.log(req)
         const credentials = basicAuth(req);
@@ -13,16 +19,19 @@ const authoriseRequest = async (req, res, next) => {
             res.status(401).send('Authentication required');
             return;
         }
-        const dbResult = await users_db_1.default.checkCredentials(credentials);
-        if (dbResult.responseMessage === "No match found") {
-            throw dbResult;
-        }
-        else if (dbResult.responseMessage === "Match found") {
-            next();
-        }
+        await users_db_1.default.areCredentialsCorrect(credentials);
+        next();
     }
     catch (e) {
-        return res.status(401).send(e);
+        const DBOperation = e;
+        if (DBOperation.specificErrorCode === "No rows affected") {
+            //User not authorised
+            return res.status(401).send(authenticationOperation);
+        }
+        else {
+            authenticationOperation.errorType = "Miscellaneous error";
+            return res.status(401).send(authenticationOperation);
+        }
     }
 };
 module.exports = authoriseRequest;

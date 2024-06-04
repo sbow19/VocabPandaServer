@@ -28,18 +28,12 @@ class UserBuffersDatabase extends vpModel {
 
                 try{
 
-                    //Begin transaction
-
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err=>{throw err});
 
                      const [searchResult] = await dbResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.bufferStatements.checkForDeviceMatches,
                         [
                             userId
                         ])
-
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
-
 
                     //Check whether there is more than one Device type
 
@@ -109,11 +103,7 @@ class UserBuffersDatabase extends vpModel {
 
                 try{
 
-                    //Begin transaction
-
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
-                     const [searchResult, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
+                     const [searchResult, ] = await dbResponseObject.mysqlConnection.query<RowDataPacket[]>(
                         preparedSQLStatements.bufferStatements.fetchBufferContent,
                         [
                             table,
@@ -121,7 +111,6 @@ class UserBuffersDatabase extends vpModel {
                         ]
                     )
 
-                    await dbResponseObject.mysqlConnection?.commit(); 
                    
                     const bufferContent: Array<apiTypes.OperationWrapper> = await JSON.parse(searchResult);
 
@@ -188,11 +177,13 @@ class UserBuffersDatabase extends vpModel {
                 //Get db connection
                 const dbResponseObject = await super.getUsersBuffersDBConnection();
 
+                //Begin transaction
+
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
 
-                    //Begin transaction
-
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+                 
 
                      const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.bufferStatements.clearBufferContent,
@@ -218,6 +209,7 @@ class UserBuffersDatabase extends vpModel {
                   
                 
                 }catch(e){
+                    await dbResponseObject.mysqlConnection?.rollback()
                     console.log("SQL ERROR, clearing buffer", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -264,6 +256,9 @@ class UserBuffersDatabase extends vpModel {
 
                 //Get db connection
                 const dbResponseObject = await super.getUsersBuffersDBConnection();
+
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 
                 try{
 
@@ -274,8 +269,7 @@ class UserBuffersDatabase extends vpModel {
 
                     bufferContent.push(...userContentArray); // Push contents of local content to extension buffer
 
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+                    
 
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.bufferStatements.pushLocalContent,
@@ -300,6 +294,7 @@ class UserBuffersDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, pushing content to buffer", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;

@@ -4,6 +4,8 @@ import mysql, {ResultSetHeader, RowDataPacket}  from 'mysql2/promise'
 import vpModel from "@shared/models/models_template";
 const strftime = require('strftime');
 const UserDetailsDBPool = require("./user_details_pool");
+const UserBuffersDBPool = require("../user_buffers/user_buffers_pool")
+const UserSyncDBPool = require("../user_sync/user_sync_pool")
 import preparedSQLStatements from "../prepared_statements";
 
 class UserDetailsDatabase extends vpModel {
@@ -34,11 +36,16 @@ class UserDetailsDatabase extends vpModel {
             try{
 
                 const connectionResponseObject = await super.getUsersDetailsDBConnection(); //Get connection to user_logins table
+                const connectionResponseObjectBuffer = await super.getUsersBuffersDBConnection();
+                const connectionResponseObjectSync = await super.getUserSyncDBConnection();
+
+                //Begin transaction
+                await connectionResponseObject.mysqlConnection?.beginTransaction();
+                await connectionResponseObjectBuffer.mysqlConnection?.beginTransaction();
+                await connectionResponseObjectSync.mysqlConnection?.beginTransaction();
 
                 try{
-                    //Begin transaction
-                    await connectionResponseObject.mysqlConnection?.beginTransaction();
-
+            
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addUserDetails,
                         [
@@ -48,7 +55,6 @@ class UserDetailsDatabase extends vpModel {
                             0
                         ])
          
-
                     await connectionResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.accountStatements.addDefaultSettings,
                         [
@@ -70,20 +76,27 @@ class UserDetailsDatabase extends vpModel {
                     const bufferContent =  [];
                     const jsonString = JSON.stringify(bufferContent);
 
-                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserApp, [userId, jsonString, deviceId]);
-                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserExtension, [userId, jsonString, deviceId]);
-                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserHub, [userId, appValue, extensionValue]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserApp, [userId, jsonString, deviceId]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserExtension, [userId, jsonString, deviceId]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(preparedSQLStatements.bufferStatements.addNewUserHub, [userId, appValue, extensionValue]);
 
                     //Add details to sync 
-                    await connectionResponseObject.mysqlConnection?.query(preparedSQLStatements.syncStatements.addNewUser, [0, userId, deviceId, null]);
+                    await connectionResponseObjectSync.mysqlConnection?.query(preparedSQLStatements.syncStatements.addNewUser, [0, userId, deviceId, null]);
+
 
                     // commit add new user transaction  
-                    await connectionResponseObject.mysqlConnection?.commit();       
+                    await connectionResponseObject.mysqlConnection?.commit(); 
+                    await connectionResponseObjectSync.mysqlConnection?.commit();
+                    await connectionResponseObjectBuffer.mysqlConnection?.commit();
+                          
 
                     addUserDetailsResponse.success = true
                     resolve(addUserDetailsResponse)
 
                 }catch(e){
+                    connectionResponseObject.mysqlConnection?.rollback();
+                    connectionResponseObjectBuffer.mysqlConnection?.rollback();
+                    connectionResponseObjectSync.mysqlConnection?.rollback();
                     console.log("SQL ERROR, creating new user", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -91,6 +104,8 @@ class UserDetailsDatabase extends vpModel {
 
                     //Release pool connection
                     UserDetailsDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                    UserBuffersDBPool.releaseConnection(connectionResponseObjectBuffer);
+                    UserSyncDBPool.releaseConnection(connectionResponseObjectSync);
                 }
 
             }catch(e){
@@ -120,14 +135,13 @@ class UserDetailsDatabase extends vpModel {
             try{
 
                 //Get db connection
-
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
 
-                try{
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
 
-                
+                try{
+                    
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.settingsStatements.updateUserSettings,
                         [
@@ -153,6 +167,7 @@ class UserDetailsDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating settings", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -187,13 +202,9 @@ class UserDetailsDatabase extends vpModel {
             try{
 
                 //Get db connection
-
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
 
                 try{
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
                    
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.settingsStatements.getUserSettings,
@@ -201,8 +212,6 @@ class UserDetailsDatabase extends vpModel {
                             userId
                         ]
                     )
-                    
-                    await dbResponseObject.mysqlConnection?.commit(); 
                     
                     if(queryResponse.affectedRows === 0){
                         //No user settings identified for this user
@@ -265,17 +274,13 @@ class UserDetailsDatabase extends vpModel {
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
 
                 try{
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
+                   
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.accountStatements.checkPremiumStatus,
                         [
                             userId
                         ]
                     )
-                    
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
                     if(queryResponse.affectedRows === 0){
                         //No user found 
@@ -335,11 +340,10 @@ class UserDetailsDatabase extends vpModel {
 
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
 
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
 
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
-                
                     const [updateResultUsername, ] = await dbResponseObject.mysqlConnection.query<ResultSetHeader>(
                         preparedSQLStatements.accountStatements.updateLastLoggedIn,
                         [
@@ -359,6 +363,7 @@ class UserDetailsDatabase extends vpModel {
                     };
 
                 }catch(e){
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating logged in time", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -405,8 +410,6 @@ class UserDetailsDatabase extends vpModel {
                     SELECT * FROM translation_left 
                     WHERE user_id = ?;
                 `
-
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
 
                     const [queryResult] = await dbConnectionObject.mysqlConnection?.query(
                         checkTranslationsSqlQuery,
@@ -499,18 +502,17 @@ class UserDetailsDatabase extends vpModel {
 
             try{
 
-                //get user id 
-                const {matchMessage} = await super.getUserId(username);
                 
+                const {matchMessage} = await super.getUserId(username);
                 const userId = matchMessage;
 
-                //Get db connection
-                const dbConnectionObject = await super.getUsersDetailsDBConnection();
-                
 
+                const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                await dbConnectionObject.mysqlConnection?.beginTransaction();
+                
                 try{
 
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
+                    
 
                     const [translationsLeftResult] = await dbConnectionObject.mysqlConnection?.query(
                         preparedSQLStatements.translationsStatements.checkTranslationsLeft,
@@ -665,6 +667,7 @@ class UserDetailsDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    await dbConnectionObject.mysqlConnection?.rollback();
                     throw e
                 }finally{
                     //Release pool connection
@@ -691,10 +694,11 @@ class UserDetailsDatabase extends vpModel {
             try{
                 //Get db connection
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                //Begin transaction
+                await dbConnectionObject.mysqlConnection?.beginTransaction();
             
                 try{
-                    //Begin transaction
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
+
                    
                     const [queryResponse1,] = await dbConnectionObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.generalStatements.updatePlays,
@@ -726,6 +730,7 @@ class UserDetailsDatabase extends vpModel {
 
                 }catch(e){
 
+                    await dbConnectionObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating plays left", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;

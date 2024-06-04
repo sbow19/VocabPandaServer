@@ -22,12 +22,9 @@ class UserBuffersDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction(err => { throw err; });
                     const [searchResult] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.checkForDeviceMatches, [
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     //Check whether there is more than one Device type
                     const appTypes = [];
                     const extensionTypes = [];
@@ -88,13 +85,10 @@ class UserBuffersDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersBuffersDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-                    const [searchResult,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.fetchBufferContent, [
+                    const [searchResult,] = await dbResponseObject.mysqlConnection.query(prepared_statements_1.default.bufferStatements.fetchBufferContent, [
                         table,
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit();
                     const bufferContent = await JSON.parse(searchResult);
                     //Check affected rows
                     if (searchResult.length === 0) {
@@ -150,9 +144,9 @@ class UserBuffersDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersBuffersDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.clearBufferContent, [
                         table,
                         userId
@@ -170,6 +164,7 @@ class UserBuffersDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, clearing buffer", e);
                     const sqlError = e;
                     throw sqlError;
@@ -210,13 +205,13 @@ class UserBuffersDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersBuffersDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
                     //Fetch buffer content
                     const bufferFetchResponse = await this.fetchBufferContent(deviceType, userId);
                     const bufferContent = bufferFetchResponse.resultArray;
                     bufferContent.push(...userContentArray); // Push contents of local content to extension buffer
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.pushLocalContent, [
                         table,
                         JSON.stringify(bufferContent),
@@ -235,6 +230,7 @@ class UserBuffersDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, pushing content to buffer", e);
                     const sqlError = e;
                     throw sqlError;

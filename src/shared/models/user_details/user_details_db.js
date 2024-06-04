@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const models_template_1 = __importDefault(require("@shared/models/models_template"));
 const strftime = require('strftime');
 const UserDetailsDBPool = require("./user_details_pool");
+const UserBuffersDBPool = require("../user_buffers/user_buffers_pool");
+const UserSyncDBPool = require("../user_sync/user_sync_pool");
 const prepared_statements_1 = __importDefault(require("../prepared_statements"));
 class UserDetailsDatabase extends models_template_1.default {
     //Add new user details
@@ -28,9 +30,13 @@ class UserDetailsDatabase extends models_template_1.default {
             }
             try {
                 const connectionResponseObject = await super.getUsersDetailsDBConnection(); //Get connection to user_logins table
+                const connectionResponseObjectBuffer = await super.getUsersBuffersDBConnection();
+                const connectionResponseObjectSync = await super.getUserSyncDBConnection();
+                //Begin transaction
+                await connectionResponseObject.mysqlConnection?.beginTransaction();
+                await connectionResponseObjectBuffer.mysqlConnection?.beginTransaction();
+                await connectionResponseObjectSync.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await connectionResponseObject.mysqlConnection?.beginTransaction();
                     await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.addUserDetails, [
                         userCredentials.username,
                         userId,
@@ -53,17 +59,22 @@ class UserDetailsDatabase extends models_template_1.default {
                     //Add details to buffer 
                     const bufferContent = [];
                     const jsonString = JSON.stringify(bufferContent);
-                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserApp, [userId, jsonString, deviceId]);
-                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserExtension, [userId, jsonString, deviceId]);
-                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserHub, [userId, appValue, extensionValue]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserApp, [userId, jsonString, deviceId]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserExtension, [userId, jsonString, deviceId]);
+                    await connectionResponseObjectBuffer.mysqlConnection?.query(prepared_statements_1.default.bufferStatements.addNewUserHub, [userId, appValue, extensionValue]);
                     //Add details to sync 
-                    await connectionResponseObject.mysqlConnection?.query(prepared_statements_1.default.syncStatements.addNewUser, [0, userId, deviceId, null]);
+                    await connectionResponseObjectSync.mysqlConnection?.query(prepared_statements_1.default.syncStatements.addNewUser, [0, userId, deviceId, null]);
                     // commit add new user transaction  
                     await connectionResponseObject.mysqlConnection?.commit();
+                    await connectionResponseObjectSync.mysqlConnection?.commit();
+                    await connectionResponseObjectBuffer.mysqlConnection?.commit();
                     addUserDetailsResponse.success = true;
                     resolve(addUserDetailsResponse);
                 }
                 catch (e) {
+                    connectionResponseObject.mysqlConnection?.rollback();
+                    connectionResponseObjectBuffer.mysqlConnection?.rollback();
+                    connectionResponseObjectSync.mysqlConnection?.rollback();
                     console.log("SQL ERROR, creating new user", e);
                     const sqlError = e;
                     throw sqlError;
@@ -71,6 +82,8 @@ class UserDetailsDatabase extends models_template_1.default {
                 finally {
                     //Release pool connection
                     UserDetailsDBPool.releaseConnection(connectionResponseObject.mysqlConnection);
+                    UserBuffersDBPool.releaseConnection(connectionResponseObjectBuffer);
+                    UserSyncDBPool.releaseConnection(connectionResponseObjectSync);
                 }
             }
             catch (e) {
@@ -98,9 +111,9 @@ class UserDetailsDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.settingsStatements.updateUserSettings, [
                         settingsObject.gameTimerOn,
                         settingsObject.gameNoOfTurns,
@@ -122,6 +135,7 @@ class UserDetailsDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating settings", e);
                     const sqlError = e;
                     throw sqlError;
@@ -155,12 +169,9 @@ class UserDetailsDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.settingsStatements.getUserSettings, [
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit();
                     if (queryResponse.affectedRows === 0) {
                         //No user settings identified for this user
                         fetchResult.specificErrorCode = "No rows affected";
@@ -212,12 +223,9 @@ class UserDetailsDatabase extends models_template_1.default {
                 //Get db connection
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
                 try {
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.checkPremiumStatus, [
                         userId
                     ]);
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     if (queryResponse.affectedRows === 0) {
                         //No user found 
                         reject(fetchResult);
@@ -269,8 +277,8 @@ class UserDetailsDatabase extends models_template_1.default {
             const sqlFormattedDate = super.getCurrentTime();
             try {
                 const dbResponseObject = await super.getUsersDetailsDBConnection();
+                await dbResponseObject.mysqlConnection?.beginTransaction();
                 try {
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
                     const [updateResultUsername,] = await dbResponseObject.mysqlConnection.query(prepared_statements_1.default.accountStatements.updateLastLoggedIn, [
                         sqlFormattedDate,
                         userId
@@ -287,6 +295,7 @@ class UserDetailsDatabase extends models_template_1.default {
                     ;
                 }
                 catch (e) {
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating logged in time", e);
                     const sqlError = e;
                     throw sqlError;
@@ -328,7 +337,6 @@ class UserDetailsDatabase extends models_template_1.default {
                     SELECT * FROM translation_left 
                     WHERE user_id = ?;
                 `;
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
                     const [queryResult] = await dbConnectionObject.mysqlConnection?.query(checkTranslationsSqlQuery, userId);
                     if (queryResult.length === 0) {
                         throw "error, no user data";
@@ -395,13 +403,11 @@ class UserDetailsDatabase extends models_template_1.default {
     static updateTranslationsLeft(username) {
         return new Promise(async (resolve, reject) => {
             try {
-                //get user id 
                 const { matchMessage } = await super.getUserId(username);
                 const userId = matchMessage;
-                //Get db connection
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                await dbConnectionObject.mysqlConnection?.beginTransaction();
                 try {
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
                     const [translationsLeftResult] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.translationsStatements.checkTranslationsLeft, userId);
                     console.log(translationsLeftResult);
                     const [premiumQueryResult] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.accountStatements.checkPremiumStatus, userId);
@@ -488,6 +494,7 @@ class UserDetailsDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbConnectionObject.mysqlConnection?.rollback();
                     throw e;
                 }
                 finally {
@@ -511,9 +518,9 @@ class UserDetailsDatabase extends models_template_1.default {
             try {
                 //Get db connection
                 const dbConnectionObject = await super.getUsersDetailsDBConnection();
+                //Begin transaction
+                await dbConnectionObject.mysqlConnection?.beginTransaction();
                 try {
-                    //Begin transaction
-                    await dbConnectionObject.mysqlConnection?.beginTransaction();
                     const [queryResponse1,] = await dbConnectionObject.mysqlConnection?.query(prepared_statements_1.default.generalStatements.updatePlays, [
                         playsDetails.playsLeft,
                         playsDetails.userId
@@ -534,6 +541,7 @@ class UserDetailsDatabase extends models_template_1.default {
                     }
                 }
                 catch (e) {
+                    await dbConnectionObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating plays left", e);
                     const sqlError = e;
                     throw sqlError;

@@ -112,9 +112,6 @@ class UsersContentDatabase extends vpModel {
 
                 try{
 
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
                     const [projects, ] = await dbResponseObject.mysqlConnection?.query<RowDataPacket[]>(
                         preparedSQLStatements.projectStatements.getAllProjects,
                         [
@@ -128,8 +125,6 @@ class UsersContentDatabase extends vpModel {
                             userId
                         ]
                     )
-
-                    await dbResponseObject.mysqlConnection?.commit(); // end add new project transaction
                     
                     getAllContentResponse.resultArray.entries = entries;
                     getAllContentResponse.resultArray.projects = projects;
@@ -174,11 +169,11 @@ class UsersContentDatabase extends vpModel {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
 
-                
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
 
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.projectStatements.addNewProject,
@@ -204,6 +199,7 @@ class UsersContentDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, inserting project", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -239,12 +235,13 @@ class UsersContentDatabase extends vpModel {
             try{
 
                 //Get db connection
-
                 const dbResponseObject = await super.getUsersContentDBConnection();
 
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+                    
 
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.projectStatements.deleteProject,
@@ -267,6 +264,7 @@ class UsersContentDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, deleting project", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -304,14 +302,12 @@ class UsersContentDatabase extends vpModel {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
 
+                //Begin transaction
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
-
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
-
                     //Add new user details
                    
-
                     const [queryResponse, ] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.entryStatements.addNewEntry,
                         [
@@ -343,6 +339,7 @@ class UsersContentDatabase extends vpModel {
             
 
                 }catch(e){
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, inserting entry", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -382,11 +379,9 @@ class UsersContentDatabase extends vpModel {
                 //Get db connection
 
                 const dbResponseObject = await super.getUsersContentDBConnection();
+                dbResponseObject.mysqlConnection?.beginTransaction()
 
                 try{
-
-                    //Begin transaction
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
 
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query(
                         preparedSQLStatements.entryStatements.updateEntry,
@@ -415,6 +410,7 @@ class UsersContentDatabase extends vpModel {
                     }
 
                 }catch(e){
+                    dbResponseObject.mysqlConnection?.rollback();
                     console.log("SQL ERROR, updating entry", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;
@@ -455,9 +451,11 @@ class UsersContentDatabase extends vpModel {
                 //Get db connection
                 const dbResponseObject = await super.getUsersContentDBConnection();
 
+                //Begin transaction  
+                await dbResponseObject.mysqlConnection?.beginTransaction();
+
                 try{
-                     //Begin transaction  
-                    await dbResponseObject.mysqlConnection?.beginTransaction();
+             
                     
                     const [queryResponse,] = await dbResponseObject.mysqlConnection?.query<ResultSetHeader>(
                         preparedSQLStatements.entryStatements.deleteEntry, 
@@ -480,6 +478,7 @@ class UsersContentDatabase extends vpModel {
                     
 
                 }catch(e){
+                    await dbResponseObject.mysqlConnection?.rollback()
                     console.log("SQL ERROR, updating entry", e)
                     const sqlError = e as mysql.QueryError;
                     throw sqlError;

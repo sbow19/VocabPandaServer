@@ -89,8 +89,9 @@ const preparedSQLStatements = {
         updatePlaysRefreshTime: `
         UPDATE next_plays_refresh
         SET games_refresh = ?
-        WHERE user_id = ?
-    ;`
+        WHERE user_id = ?;`,
+        getDeviceCredentials: `SELECT * FROM api_keys WHERE api_key = ? AND device_id = ?;`
+
     },
 
     translationsStatements: {

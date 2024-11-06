@@ -1,0 +1,53 @@
+
+POST http://localhost:3000/account/createaccount
+Authorization: BASIC test-verify-2 280d6c6c-53b6-4925-8652-7c038302bbf1
+Content-Type: application/json 
+
+
+#Update entry 
+# {
+#     "entryId": "f61a46a4-e82c-4fc8-bc3d-36d1836eb679",
+#     "updateDetails": {
+#         "target_language_text": "Tres",
+#         "target_language": "ES",
+#         "output_language_text": "Three",
+#         "output_language": "EN",
+#         "tags": [
+#             "487d3f42-ff5c-4653-9b69-28b749a170ee"
+#         ],
+#         "project": "New Projec"
+#     }
+# }
+
+# # #Generating device ID
+# {
+#     "deviceId": "test-verify-2"
+# }
+
+#Create account
+{
+    "username": "test-verify-2",
+    "password": "",
+    "email": "test-verify-2@gmail.com"
+}
+
+# #Delete account
+
+# {
+#     "userName": "test-api",
+#     "password": ""
+# }
+
+# #TRANSLATION REQUEST
+
+# {
+#     "userName": "test-verify-9",
+#     "userRequest": {
+#         "target_text": "black         ",
+#         "target_text_lang": "EN",
+#         "output_lang": "ES"
+#     }
+# }
+
+
+#EMAIL 
